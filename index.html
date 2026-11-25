@@ -149,20 +149,21 @@ label.lbl{display:block;font-size:13px;font-weight:700;color:var(--muted);margin
 <body>
 <div id="app"></div>
 <script src="words.js"></script>
+<script src="peerjs.min.js"></script>
 <script>
 "use strict";
-const VERSION = "1.0";
+const VERSION = "2.0";
 const KEY = "balderdash_v1";
 const MIN_PLAYERS = 3;
 const app = document.getElementById("app");
 
 /* ---------- state ---------- */
 function fresh(){
-  return { screen:"home", players:[], settings:{ target:25, privateVote:true }, used:[], game:null, handoff:null, overlay:null };
+  return { screen:"home", players:[], settings:{ target:25, privateVote:true, mode:"paper" }, used:[], game:null, handoff:null, overlay:null };
 }
 let S = load();
 function load(){
-  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s && s.players) return Object.assign(fresh(), s, {overlay:null}); }catch(e){}
+  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s && s.players){ if(s.screen === "online") s.screen = "home"; const f = fresh(); const o = Object.assign(f, s, {overlay:null}); o.settings = Object.assign(fresh().settings, s.settings); return o; } }catch(e){}
   return fresh();
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
@@ -195,7 +196,7 @@ function drawCard(){
 function startGame(){
   S.game = {
     players: S.players.map(p => ({ id:p.id, name:p.name, score:0 })),
-    target: S.settings.target, dasher: 0, round: 1, r: null, last:{}
+    target: S.settings.target, mode: S.settings.mode, dasher: 0, round: 1, r: null, last:{}
   };
   newRound();
 }
@@ -203,7 +204,7 @@ function newRound(){
   const g = G();
   const order = [];
   for(let k=1;k<g.players.length;k++) order.push(g.players[(g.dasher + k) % g.players.length].id);
-  g.r = { card: drawCard(), writers: order, wi: 0, bluffs:{}, correct:{}, options:[], voters:[], vi:0, votes:{}, revealOrder:[], revealed:0, points:[] };
+  g.r = { card: drawCard(), pvotes:{}, writers: order, wi: 0, bluffs:{}, correct:{}, options:[], voters:[], vi:0, votes:{}, revealOrder:[], revealed:0, points:[] };
   handoff(dasher().id, "dasher", "You're the Dasher this round.");
 }
 function nextWriter(){
@@ -247,7 +248,16 @@ function finishVoting(){
   const fakes = r.options.map((o,i) => i).filter(i => r.options[i].owner !== null).sort((a,b) => count(a) - count(b));
   r.revealOrder = fakes.concat([realIdx]);
   r.revealed = 0;
-  go("reveal");
+  go(g.mode === "paper" ? "paperresult" : "reveal");
+}
+function finishPaper(){
+  const r = R();
+  const live = r.writers.filter(id => !r.correct[id]);
+  r.options = [{ text: r.card.def, owner: null }].concat(live.map(id => ({ text:"", owner:id })));
+  r.voters = live.slice();
+  r.votes = {};
+  live.forEach(v => { const c = r.pvotes[v]; r.votes[v] = c === "real" ? 0 : r.options.findIndex(o => o.owner === c); });
+  finishVoting();
 }
 function nextRound(){
   const g = G();
@@ -267,8 +277,13 @@ screens.home = () => `
   <div class="screen">
     <div class="logo">Balderdash</div>
     <p class="tag">The game of bluffing, fake definitions &amp; family fibs</p>
-    ${G() ? `<button class="btn teal" data-act="continue">Continue game</button>` : ""}
-    <button class="btn" data-act="setup">New game</button>
+    ${typeof OL !== "undefined" ? OL.homeButtons() : ""}
+    <button class="btn" data-act="olhost">Host a game</button>
+    <button class="btn teal" data-act="oljoin">Join a game</button>
+    <p class="hint" style="margin-top:4px">Everyone plays on their own phone.</p>
+    <h2 style="font-size:17px;text-align:center;opacity:.8;margin-top:26px">Only one phone?</h2>
+    ${G() ? `<button class="btn ghost" data-act="continue">Continue one-phone game</button>` : ""}
+    <button class="btn ghost" data-act="setup">One-phone game</button>
     <div class="row">
       <button class="btn ghost" data-act="rules">How to play</button>
       <button class="btn ghost" data-act="settings">Settings</button>
@@ -290,6 +305,12 @@ screens.setup = () => `
       <input type="text" id="pname" placeholder="Player name" maxlength="20" autocomplete="off" enterkeyhint="done">
       <button class="btn" data-act="add">Add</button>
     </div>
+    <h2>Answers</h2>
+    <div class="chips">
+      <button class="chip ${S.settings.mode==="paper"?"on":""}" data-act="mode" data-m="paper">✏️ On paper</button>
+      <button class="chip ${S.settings.mode==="phone"?"on":""}" data-act="mode" data-m="phone">📱 Typed on the phone</button>
+    </div>
+    <p class="hint" style="text-align:left;margin-top:8px">${S.settings.mode==="paper" ? "Write on slips and vote out loud. The phone gives the Dasher a word and keeps score." : "Pass the phone around to type answers and vote in secret."}</p>
     <h2>Play to</h2>
     <div class="chips">
       ${[15,25,35,50].map(t => `<button class="chip ${S.settings.target===t?"on":""}" data-act="target" data-t="${t}">${t} pts</button>`).join("")}
@@ -320,6 +341,27 @@ function topbar(){
 
 screens.dasher = () => {
   const r = R();
+  if(G().mode === "paper") return `<div class="screen">${topbar()}
+    <h1>You're the Dasher 🎩</h1>
+    <p class="sub">Only you see the real meaning. Copy it onto your slip (in your own words, so it blends in), then read the word aloud and spell it.</p>
+    <div class="card">
+      <div class="wordlabel">The word</div>
+      <div class="word">${esc(r.card.word)}</div>
+      <div class="def" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">${esc(r.card.def)}</div>
+    </div>
+    <div class="row">
+      <button class="btn ghost" data-act="redraw">🔀 Different word</button>
+      <button class="btn ghost" data-act="custom">✏️ My own word</button>
+    </div>
+    <div class="card" style="background:rgba(255,255,255,.08);color:#fff;box-shadow:none">
+      <ol style="margin:0;padding-left:20px;line-height:1.6">
+        <li>Everyone writes a fake definition on a slip.</li>
+        <li>Collect the slips plus yours, shuffle, and read them all aloud.</li>
+        <li>Go around the table: each player says which one they think is real.</li>
+      </ol>
+    </div>
+    <button class="btn" data-act="totally">Everyone's voted — enter the votes</button>
+  </div>`;
   return `<div class="screen">${topbar()}
     <h1>You're the Dasher 🎩</h1>
     <p class="sub">Only you see the real meaning. Read the word out loud (and spell it), then pass the phone around.</p>
@@ -375,6 +417,37 @@ screens.review = () => {
       <textarea data-bluff="${id}">${esc(r.bluffs[id])}</textarea>
     </div>`).join("")}
     <button class="btn" data-act="reviewdone">Shuffle &amp; read them out</button>
+  </div>`;
+};
+
+screens.tally = () => {
+  const r = R(); const live = r.writers.filter(id => !r.correct[id]);
+  const ready = live.every(v => r.pvotes[v]);
+  return `<div class="screen">${topbar()}
+    <h1>Who picked what?</h1>
+    <p class="sub">“${esc(r.card.word)}” — the real one: ${esc(r.card.def)}</p>
+    <h2>Anyone basically right?</h2>
+    <p class="sub" style="margin-bottom:8px">They get 3 points and don't vote.</p>
+    <div class="chips">${r.writers.map(id => `<button class="chip ${r.correct[id]?"on":""}" data-act="knew" data-id="${id}">${r.correct[id]?"✓ ":""}${esc(nm(id))}</button>`).join("")}</div>
+    <h2>Votes</h2>
+    ${live.length ? live.map(v => `<div class="rv"><div class="top"><span>${esc(nm(v))} voted for…</span></div>
+      <div class="chips">
+        <button class="chip tch ${r.pvotes[v]==="real"?"on":""}" data-act="pv2" data-v="${v}" data-c="real">The real one</button>
+        ${live.filter(o => o !== v).map(o => `<button class="chip tch ${r.pvotes[v]===o?"on":""}" data-act="pv2" data-v="${v}" data-c="${o}">${esc(nm(o))}'s</button>`).join("")}
+      </div></div>`).join("") : `<p class="hint">Everyone knew it — no votes to enter.</p>`}
+    <button class="btn" data-act="tallydone" ${ready?"":"disabled"}>${ready ? "Score this round" : "Enter everyone's vote"}</button>
+  </div>`;
+};
+
+screens.paperresult = () => {
+  const r = R();
+  return `<div class="screen">${topbar()}
+    <h1>Round results</h1>
+    <div class="card"><div class="wordlabel">${esc(r.card.word)}</div><div class="def" style="margin-top:6px">${esc(r.card.def)}</div></div>
+    <div class="card"><div class="wordlabel">Points this round</div>
+      ${r.points.length ? `<ul class="pointlist">${r.points.map(l => `<li><span>${esc(nm(l.id))} ${esc(l.why)}</span><b>+${l.n}</b></li>`).join("")}</ul>` : `<p>No points this round.</p>`}
+    </div>
+    <button class="btn" data-act="toscores">Scoreboard</button>
   </div>`;
 };
 
@@ -468,7 +541,24 @@ screens.rules = () => `<div class="screen">
 
 function rulesHTML(){ return `<div class="rules">
   <h1>How to play</h1>
-  <p>You only need this one phone. Each round, one player is the <b>Dasher</b> and everyone else is a bluffer.</p>
+  <p>Each round, one player is the <b>Dasher</b> and everyone else is a bluffer.</p>
+  <h2>Everyone on their own phone</h2>
+  <ol>
+    <li>One person taps <b>Host a game</b> and keeps that page open. Everyone else taps <b>Join a game</b> and enters the room code, or opens the invite link.</li>
+    <li>The Dasher's phone shows a strange word and its real meaning. The Dasher reads the word aloud.</li>
+    <li>Everyone types a fake definition on their phone. It's sent straight to the Dasher.</li>
+    <li>The Dasher shuffles. The real one is mixed in, and the numbered list shows on everyone's phone. The Dasher reads them all aloud.</li>
+    <li>Go around the table and say your vote out loud. The Dasher taps them in.</li>
+    <li>Every phone shows the big reveal and the scores.</li>
+  </ol>
+  <h2>One phone, on paper</h2>
+  <ol>
+    <li>The Dasher privately sees a word and its real meaning, copies the meaning onto a slip, and reads the word aloud.</li>
+    <li>Everyone writes a fake definition and hands it to the Dasher.</li>
+    <li>The Dasher shuffles the slips and reads them all aloud. Each player says which one they think is real.</li>
+    <li>The Dasher taps in the votes, and the app does the scoring.</li>
+  </ol>
+  <h2>One phone, passed around</h2>
   <ol>
     <li><b>The Dasher</b> sees a strange word and its real meaning, reads the word aloud, then passes the phone on.</li>
     <li><b>Everyone else</b> secretly types a fake definition that sounds real, then hands the phone to the next person.</li>
@@ -495,7 +585,7 @@ function rulesHTML(){ return `<div class="rules">
 screens.settings = () => `<div class="screen">
   <div class="bar"><button class="iconbtn" data-act="home">‹</button><span class="meta">Settings</span><span style="width:40px"></span></div>
   <h1>Settings</h1>
-  <h2>Voting</h2>
+  <h2>Voting (phone mode)</h2>
   <div class="chips">
     <button class="chip ${S.settings.privateVote?"on":""}" data-act="pv" data-v="1">Secret (pass the phone)</button>
     <button class="chip ${!S.settings.privateVote?"on":""}" data-act="pv" data-v="0">Quick (no pass screen)</button>
@@ -527,6 +617,7 @@ function overlayHTML(){
 
 /* ---------- render ---------- */
 function render(){
+  if(S.screen === "online"){ if(typeof OL !== "undefined") OL.render(); return; }
   if(S.screen !== "home" && S.screen !== "setup" && S.screen !== "settings" && S.screen !== "rules" && !G()) S.screen = "home";
   const fn = screens[S.screen] || screens.home;
   app.innerHTML = fn() + overlayHTML();
@@ -540,6 +631,10 @@ function act(a, el){
   const r = R();
   switch(a){
     case "home": S.overlay = null; go("home"); break;
+    case "olhost": OL.openHost(); break;
+    case "oljoin": OL.openJoin(); break;
+    case "olresume": OL.resumeHost(); break;
+    case "olrejoin": OL.rejoin(); break;
     case "continue": go(S.lastScreen || "scores"); break;
     case "setup": go("setup"); setTimeout(() => { const i = document.getElementById("pname"); if(i && !S.players.length) i.focus(); }, 50); break;
     case "rules": backTo = S.screen; go("rules"); break;
@@ -586,6 +681,12 @@ function act(a, el){
       r.votes[r.voters[r.vi]] = pick; r.vi++; pick = null; nextVoter(); break;
     case "revealnext": r.revealed++; save(); render(); setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior:"smooth" }), 30); break;
     case "toscores": go("scores"); break;
+    case "totally": go("tally"); break;
+    case "knew": { const id = el.dataset.id; if(r.correct[id]) delete r.correct[id]; else { r.correct[id] = true; delete r.pvotes[id]; }
+      Object.keys(r.pvotes).forEach(v => { if(r.correct[r.pvotes[v]]) delete r.pvotes[v]; }); save(); render(); break; }
+    case "pv2": r.pvotes[el.dataset.v] = el.dataset.c; save(); render(); break;
+    case "tallydone": finishPaper(); break;
+    case "mode": S.settings.mode = el.dataset.m; save(); render(); break;
     case "nextround": nextRound(); break;
     case "towinner": go("winner"); break;
     case "rematch": startGame(); break;
@@ -635,5 +736,7 @@ function confetti(){
 
 render();
 </script>
+<script src="online.js"></script>
+<script>render();</script>
 </body>
 </html>
