@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Balderdash</title>
+<meta name="theme-color" content="#24173f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Balderdash">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{
+  --bg1:#1d1235; --bg2:#3a2470; --card:#fff8e7; --ink:#2a2140; --muted:#7a6f8f;
+  --gold:#ffc93c; --coral:#ff6b6b; --teal:#2ec4b6; --line:#e8dcc0;
+  --serif: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;}
+body{
+  font-family:var(--sans); color:#fff;
+  background:radial-gradient(120% 80% at 50% 0%, var(--bg2), var(--bg1) 70%) fixed;
+  min-height:100vh; min-height:100dvh;
+}
+#app{max-width:560px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 28px);}
+.screen{animation:fade .28s ease-out}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* top bar */
+.bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:40px}
+.bar .meta{font-size:13px;opacity:.75;letter-spacing:.02em}
+.iconbtn{background:rgba(255,255,255,.1);border:0;color:#fff;width:40px;height:40px;border-radius:12px;font-size:20px;cursor:pointer}
+
+/* logo */
+.logo{font-family:var(--serif);font-weight:800;font-size:54px;letter-spacing:-.02em;text-align:center;margin:28px 0 4px;
+  background:linear-gradient(180deg,#fff 30%,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent;
+  transform:rotate(-3deg)}
+.tag{text-align:center;opacity:.8;margin:0 0 30px;font-size:15px}
+
+h1{font-family:var(--serif);font-size:30px;margin:6px 0 6px;line-height:1.15}
+h2{font-family:var(--serif);font-size:22px;margin:22px 0 8px}
+p{line-height:1.45}
+.sub{opacity:.78;margin:0 0 18px;font-size:15px}
+
+/* buttons */
+.btn{display:block;width:100%;border:0;border-radius:16px;padding:17px 18px;font-size:18px;font-weight:700;cursor:pointer;
+  background:var(--gold);color:#2a1a00;margin:10px 0;box-shadow:0 4px 0 #c99a1a;transition:transform .08s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #c99a1a}
+.btn.ghost{background:rgba(255,255,255,.1);color:#fff;box-shadow:none;font-weight:600}
+.btn.teal{background:var(--teal);color:#06302c;box-shadow:0 4px 0 #1d8f85}
+.btn.coral{background:var(--coral);color:#3a0a0a;box-shadow:0 4px 0 #c24747}
+.btn:disabled{opacity:.4;pointer-events:none}
+.row{display:flex;gap:10px}.row .btn{flex:1}
+.link{background:none;border:0;color:#fff;opacity:.7;text-decoration:underline;font-size:15px;cursor:pointer;padding:10px;display:block;margin:4px auto}
+
+/* cards */
+.card{background:var(--card);color:var(--ink);border-radius:20px;padding:20px;margin:12px 0;
+  box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.word{font-family:var(--serif);font-size:38px;font-weight:800;text-align:center;margin:6px 0 2px;word-break:break-word;line-height:1.1}
+.wordlabel{text-align:center;text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--muted);font-weight:700}
+.def{font-family:var(--serif);font-size:19px;line-height:1.45}
+.cardsmall{font-size:13px;color:var(--muted);margin-top:8px}
+
+textarea,input[type=text]{width:100%;font:inherit;font-size:17px;border:2px solid var(--line);border-radius:14px;padding:13px 14px;
+  background:#fff;color:var(--ink);outline:none;resize:vertical}
+textarea{min-height:110px;font-family:var(--serif);font-size:18px;line-height:1.4}
+textarea:focus,input[type=text]:focus{border-color:var(--gold)}
+label.lbl{display:block;font-size:13px;font-weight:700;color:var(--muted);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.06em}
+
+/* players */
+.plist{list-style:none;padding:0;margin:0}
+.plist li{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.08);border-radius:14px;padding:10px 12px;margin:8px 0;font-size:18px}
+.plist .num{width:28px;height:28px;border-radius:50%;background:var(--gold);color:#2a1a00;font-weight:800;display:grid;place-items:center;font-size:14px;flex:none}
+.plist .name{flex:1}
+.plist button{background:rgba(255,255,255,.12);border:0;color:#fff;border-radius:10px;width:36px;height:36px;font-size:16px;cursor:pointer}
+.addrow{display:flex;gap:8px;margin-top:10px}
+.addrow input{flex:1}
+.addrow button{flex:none;width:auto;margin:0;padding:0 20px}
+
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:2px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:999px;padding:9px 16px;font-size:16px;font-weight:600;cursor:pointer}
+.chip.on{background:var(--gold);border-color:var(--gold);color:#2a1a00}
+
+/* handoff */
+.handoff{text-align:center;padding-top:12vh}
+.handoff .big{font-family:var(--serif);font-size:44px;font-weight:800;margin:8px 0 4px;color:var(--gold);word-break:break-word}
+.handoff .emoji{font-size:64px}
+.handoff p{opacity:.8}
+
+/* options */
+.opt{display:flex;gap:12px;align-items:flex-start;background:var(--card);color:var(--ink);border-radius:16px;padding:15px;margin:10px 0;
+  border:3px solid transparent;cursor:pointer;text-align:left;width:100%;font:inherit;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+.opt .n{flex:none;width:32px;height:32px;border-radius:50%;background:var(--ink);color:var(--card);display:grid;place-items:center;font-weight:800}
+.opt .t{font-family:var(--serif);font-size:18px;line-height:1.4;flex:1}
+.opt.sel{border-color:var(--gold);background:#fff2c8}
+.opt.sel .n{background:var(--gold);color:#2a1a00}
+.opt.mine{opacity:.45;cursor:not-allowed}
+.opt .who{display:block;font-family:var(--sans);font-size:13px;font-weight:700;margin-top:8px}
+.opt.real{border-color:var(--teal);background:#e6fbf8}
+.opt.real .n{background:var(--teal);color:#06302c}
+.opt.hidden .t{filter:blur(0)}
+.badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.08em;padding:3px 8px;border-radius:6px;text-transform:uppercase}
+.badge.real{background:var(--teal);color:#06302c}
+.badge.fake{background:var(--coral);color:#3a0a0a}
+.badge.ok{background:var(--gold);color:#2a1a00}
+.votes{font-family:var(--sans);font-size:14px;color:var(--muted);margin-top:4px}
+
+/* review */
+.rv{background:var(--card);color:var(--ink);border-radius:16px;padding:14px;margin:10px 0}
+.rv .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700}
+.rv textarea{min-height:70px}
+.toggle{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;user-select:none}
+.toggle input{width:22px;height:22px;accent-color:var(--teal)}
+
+/* scores */
+.score{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.08);border-radius:14px;padding:13px 14px;margin:8px 0}
+.score .pos{width:26px;text-align:center;font-weight:800;opacity:.7}
+.score .nm{flex:1;font-size:18px;font-weight:600}
+.score .pts{font-size:24px;font-weight:800;font-family:var(--serif)}
+.score .d{font-size:14px;font-weight:800;color:var(--teal);min-width:38px;text-align:right}
+.score.lead{background:rgba(255,201,60,.18)}
+.track{height:6px;border-radius:3px;background:rgba(255,255,255,.12);margin-top:6px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--gold);border-radius:3px}
+
+.pointlist{list-style:none;padding:0;margin:8px 0}
+.pointlist li{padding:9px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;font-size:15px}
+.pointlist li:last-child{border:0}
+.pointlist b{color:#0d7d72;white-space:nowrap}
+
+/* overlay */
+.overlay{position:fixed;inset:0;background:rgba(10,5,25,.7);display:flex;align-items:flex-end;justify-content:center;z-index:50;animation:fade .2s}
+.sheet{background:#2d1d55;width:100%;max-width:560px;border-radius:24px 24px 0 0;padding:18px 18px calc(env(safe-area-inset-bottom) + 18px);max-height:88vh;overflow:auto}
+.sheet h2{margin-top:4px}
+
+.rules p,.rules li{line-height:1.5;opacity:.92}
+.rules li{margin:6px 0}
+.foot{text-align:center;font-size:12px;opacity:.5;margin-top:26px}
+.hint{font-size:14px;opacity:.75;text-align:center;margin:6px 0}
+
+/* confetti */
+.confetti{position:fixed;top:-20px;width:10px;height:16px;z-index:40;animation:fall linear forwards;border-radius:2px}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+.trophy{font-size:90px;text-align:center;margin-top:30px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="words.js"></script>
+<script>
+"use strict";
+const VERSION = "1.0";
+const KEY = "balderdash_v1";
+const MIN_PLAYERS = 3;
+const app = document.getElementById("app");
+
+/* ---------- state ---------- */
+function fresh(){
+  return { screen:"home", players:[], settings:{ target:25, privateVote:true }, used:[], game:null, handoff:null, overlay:null };
+}
+let S = load();
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s && s.players) return Object.assign(fresh(), s, {overlay:null}); }catch(e){}
+  return fresh();
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+/* ---------- helpers ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid = () => Math.random().toString(36).slice(2, 9);
+const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+const G = () => S.game;
+const R = () => S.game && S.game.r;
+const P = id => G().players.find(p => p.id === id);
+const nm = id => (P(id) || {}).name || "?";
+const dasher = () => G().players[G().dasher];
+const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+function tidy(t){ t = String(t||"").trim().replace(/\s+/g," "); if(!t) return t; t = cap(t); if(!/[.!?]$/.test(t)) t += "."; return t; }
+
+function go(screen){ S.screen = screen; save(); render(); window.scrollTo(0,0); }
+function handoff(id, next, msg){ S.handoff = { id, next, msg }; go("handoff"); }
+
+/* ---------- deck ---------- */
+function drawCard(){
+  let pool = WORDS.map((_, i) => i).filter(i => !S.used.includes(i));
+  if(!pool.length){ S.used = []; pool = WORDS.map((_, i) => i); }
+  const i = pool[Math.floor(Math.random() * pool.length)];
+  S.used.push(i);
+  return { word: WORDS[i][0], def: WORDS[i][1], custom:false };
+}
+
+/* ---------- game flow ---------- */
+function startGame(){
+  S.game = {
+    players: S.players.map(p => ({ id:p.id, name:p.name, score:0 })),
+    target: S.settings.target, dasher: 0, round: 1, r: null, last:{}
+  };
+  newRound();
+}
+function newRound(){
+  const g = G();
+  const order = [];
+  for(let k=1;k<g.players.length;k++) order.push(g.players[(g.dasher + k) % g.players.length].id);
+  g.r = { card: drawCard(), writers: order, wi: 0, bluffs:{}, correct:{}, options:[], voters:[], vi:0, votes:{}, revealOrder:[], revealed:0, points:[] };
+  handoff(dasher().id, "dasher", "You're the Dasher this round.");
+}
+function nextWriter(){
+  const r = R();
+  if(r.wi < r.writers.length) handoff(r.writers[r.wi], "write", "Time to write a fake definition.");
+  else handoff(dasher().id, "review", "Everyone's in! Dasher, check the answers.");
+}
+function buildOptions(){
+  const r = R();
+  const opts = [{ text: r.card.def, owner: null }];
+  r.writers.forEach(id => { if(!r.correct[id] && r.bluffs[id]) opts.push({ text: r.bluffs[id], owner: id }); });
+  r.options = shuffle(opts);
+  r.voters = r.writers.filter(id => !r.correct[id]);
+  r.vi = 0; r.votes = {};
+}
+function nextVoter(){
+  const r = R();
+  if(r.vi < r.voters.length){
+    if(S.settings.privateVote) handoff(r.voters[r.vi], "vote", "Your turn to vote — keep it secret!");
+    else go("vote");
+  } else finishVoting();
+}
+function finishVoting(){
+  const g = G(), r = R();
+  const pts = {}; const lines = [];
+  const add = (id, n, why) => { pts[id] = (pts[id]||0) + n; lines.push({ id, n, why }); };
+  r.writers.forEach(id => { if(r.correct[id]) add(id, 3, "knew the real meaning"); });
+  const realIdx = r.options.findIndex(o => o.owner === null);
+  let anyReal = false;
+  r.voters.forEach(id => {
+    const v = r.votes[id];
+    if(v === realIdx){ anyReal = true; add(id, 2, "picked the real definition"); }
+    else if(v != null && r.options[v] && r.options[v].owner){ add(r.options[v].owner, 1, "fooled " + nm(id)); }
+  });
+  if(!anyReal && r.voters.length) add(dasher().id, 3, "stumped everyone (Dasher bonus)");
+  g.players.forEach(p => p.score += (pts[p.id] || 0));
+  g.last = pts;
+  r.points = lines;
+  // reveal fakes (fewest votes first), real one last
+  const count = i => Object.values(r.votes).filter(v => v === i).length;
+  const fakes = r.options.map((o,i) => i).filter(i => r.options[i].owner !== null).sort((a,b) => count(a) - count(b));
+  r.revealOrder = fakes.concat([realIdx]);
+  r.revealed = 0;
+  go("reveal");
+}
+function nextRound(){
+  const g = G();
+  g.dasher = (g.dasher + 1) % g.players.length;
+  g.round++;
+  newRound();
+}
+function winners(){
+  const g = G(); const max = Math.max(...g.players.map(p => p.score));
+  return max >= g.target ? g.players.filter(p => p.score === max) : [];
+}
+
+/* ---------- screens ---------- */
+const screens = {};
+
+screens.home = () => `
+  <div class="screen">
+    <div class="logo">Balderdash</div>
+    <p class="tag">The game of bluffing, fake definitions &amp; family fibs</p>
+    ${G() ? `<button class="btn teal" data-act="continue">Continue game</button>` : ""}
+    <button class="btn" data-act="setup">New game</button>
+    <div class="row">
+      <button class="btn ghost" data-act="rules">How to play</button>
+      <button class="btn ghost" data-act="settings">Settings</button>
+    </div>
+    <div class="foot">${WORDS.length} words in the deck · Version ${VERSION}</div>
+  </div>`;
+
+screens.setup = () => `
+  <div class="screen">
+    <div class="bar"><button class="iconbtn" data-act="home">‹</button><span class="meta">New game</span><span style="width:40px"></span></div>
+    <h1>Who's playing?</h1>
+    <p class="sub">Add everyone in the order you're sitting — the Dasher rotates around the table.</p>
+    <ul class="plist">
+      ${S.players.map((p,i) => `<li><span class="num">${i+1}</span><span class="name">${esc(p.name)}</span>
+        <button data-act="up" data-i="${i}" aria-label="Move up">↑</button>
+        <button data-act="del" data-i="${i}" aria-label="Remove">✕</button></li>`).join("")}
+    </ul>
+    <div class="addrow">
+      <input type="text" id="pname" placeholder="Player name" maxlength="20" autocomplete="off" enterkeyhint="done">
+      <button class="btn" data-act="add">Add</button>
+    </div>
+    <h2>Play to</h2>
+    <div class="chips">
+      ${[15,25,35,50].map(t => `<button class="chip ${S.settings.target===t?"on":""}" data-act="target" data-t="${t}">${t} pts</button>`).join("")}
+    </div>
+    <div style="height:18px"></div>
+    <button class="btn" data-act="start" ${S.players.length < MIN_PLAYERS ? "disabled" : ""}>
+      ${S.players.length < MIN_PLAYERS ? `Need ${MIN_PLAYERS - S.players.length} more player${MIN_PLAYERS - S.players.length === 1 ? "" : "s"}` : "Start game"}
+    </button>
+  </div>`;
+
+screens.handoff = () => {
+  const h = S.handoff; const name = nm(h.id);
+  return `<div class="screen">${topbar()}<div class="handoff" style="padding-top:8vh">
+    <div class="emoji">📱</div>
+    <p>Pass the phone to</p>
+    <div class="big">${esc(name)}</div>
+    <p>${esc(h.msg || "")}</p>
+    <div style="height:30px"></div>
+    <button class="btn" data-act="ready">I'm ${esc(name)} — show me</button>
+    <p class="hint">Everyone else, no peeking!</p>
+  </div></div>`;
+};
+
+function topbar(){
+  const g = G();
+  return `<div class="bar"><span class="meta">Round ${g.round} · Dasher: ${esc(dasher().name)}</span><button class="iconbtn" data-act="menu" aria-label="Menu">☰</button></div>`;
+}
+
+screens.dasher = () => {
+  const r = R();
+  return `<div class="screen">${topbar()}
+    <h1>You're the Dasher 🎩</h1>
+    <p class="sub">Only you see the real meaning. Read the word out loud (and spell it), then pass the phone around.</p>
+    <div class="card">
+      <div class="wordlabel">The word</div>
+      <div class="word">${esc(r.card.word)}</div>
+    </div>
+    <label class="lbl">Real definition — tweak it to sound like a player wrote it</label>
+    <textarea id="realdef">${esc(r.card.def)}</textarea>
+    <div class="row">
+      <button class="btn ghost" data-act="redraw">🔀 Different word</button>
+      <button class="btn ghost" data-act="custom">✏️ My own word</button>
+    </div>
+    <button class="btn" data-act="dasherdone">I read it aloud — pass it on</button>
+  </div>`;
+};
+
+screens.custom = () => `<div class="screen">${topbar()}
+    <h1>Your own word</h1>
+    <p class="sub">Got a strange word from a dictionary? Use it here.</p>
+    <label class="lbl">Word</label>
+    <input type="text" id="cword" maxlength="40" autocomplete="off">
+    <label class="lbl">Real definition</label>
+    <textarea id="cdef"></textarea>
+    <button class="btn" data-act="customsave">Use this word</button>
+    <button class="link" data-act="customcancel">Cancel</button>
+  </div>`;
+
+screens.write = () => {
+  const r = R(); const id = r.writers[r.wi];
+  return `<div class="screen">${topbar()}
+    <p class="sub" style="margin-bottom:4px">${esc(nm(id))}, make up a definition that sounds real.</p>
+    <div class="card">
+      <div class="wordlabel">The word</div>
+      <div class="word">${esc(r.card.word)}</div>
+    </div>
+    <textarea id="bluff" placeholder="A small brass instrument used by 17th-century chimney sweeps…" maxlength="300">${esc(r.bluffs[id] || "")}</textarea>
+    <p class="hint">Think you actually know it? Write the real meaning — the Dasher can award you 3 points.</p>
+    <button class="btn" data-act="submitbluff">Submit &amp; hide</button>
+    <p class="hint">${r.wi + 1} of ${r.writers.length}</p>
+  </div>`;
+};
+
+screens.review = () => {
+  const r = R();
+  return `<div class="screen">${topbar()}
+    <h1>Dasher check</h1>
+    <p class="sub">Fix any typos so no answer gives itself away. If someone basically got the real meaning, mark it — they get 3 points and it's left out of the vote.</p>
+    <div class="card"><div class="wordlabel">${esc(r.card.word)} · real meaning</div><div class="def" style="margin-top:6px">${esc(r.card.def)}</div></div>
+    ${r.writers.map(id => `<div class="rv">
+      <div class="top"><span>${esc(nm(id))}</span>
+        <label class="toggle"><input type="checkbox" data-correct="${id}" ${r.correct[id] ? "checked" : ""}> Basically right</label></div>
+      <textarea data-bluff="${id}">${esc(r.bluffs[id])}</textarea>
+    </div>`).join("")}
+    <button class="btn" data-act="reviewdone">Shuffle &amp; read them out</button>
+  </div>`;
+};
+
+screens.read = () => {
+  const r = R();
+  return `<div class="screen">${topbar()}
+    <h1>${esc(r.card.word)}</h1>
+    <p class="sub">${esc(dasher().name)}, read every definition aloud — slowly, with a straight face.</p>
+    ${r.options.map((o,i) => `<div class="opt" style="cursor:default"><span class="n">${i+1}</span><span class="t">${esc(o.text)}</span></div>`).join("")}
+    ${r.voters.length ? `<button class="btn" data-act="startvote">Start voting</button>` : `<p class="hint">Everyone knew it! No vote needed.</p><button class="btn" data-act="startvote">Show results</button>`}
+  </div>`;
+};
+
+let pick = null;
+screens.vote = () => {
+  const r = R(); const id = r.voters[r.vi];
+  return `<div class="screen">${topbar()}
+    <h1>${esc(nm(id))}, which is real?</h1>
+    <p class="sub">“${esc(r.card.word)}” means…</p>
+    ${r.options.map((o,i) => {
+      const mine = o.owner === id;
+      return `<button class="opt ${mine?"mine":""} ${pick===i?"sel":""}" data-act="${mine?"":"pick"}" data-i="${i}" ${mine?"disabled":""}>
+        <span class="n">${i+1}</span><span class="t">${esc(o.text)}${mine?`<span class="who">That's yours</span>`:""}</span></button>`;
+    }).join("")}
+    <button class="btn" data-act="castvote" ${pick===null?"disabled":""}>Lock in vote</button>
+    <p class="hint">${r.vi + 1} of ${r.voters.length} voters</p>
+  </div>`;
+};
+
+screens.reveal = () => {
+  const r = R(); const shown = r.revealOrder.slice(0, r.revealed);
+  const done = r.revealed >= r.revealOrder.length;
+  const voteNames = i => r.voters.filter(v => r.votes[v] === i).map(nm);
+  return `<div class="screen">${topbar()}
+    <h1>The big reveal</h1>
+    <p class="sub">“${esc(r.card.word)}” — ${done ? "here's the truth!" : "tap to unmask each definition."}</p>
+    ${shown.map(i => { const o = r.options[i]; const vn = voteNames(i); const real = o.owner === null;
+      return `<div class="opt ${real?"real":""}" style="cursor:default"><span class="n">${i+1}</span><span class="t">${esc(o.text)}
+        <span class="who">${real ? `<span class="badge real">The real one</span>` : `<span class="badge fake">Fake</span> by ${esc(nm(o.owner))}`}</span>
+        <span class="votes">${vn.length ? "🗳 " + vn.map(esc).join(", ") : "No votes"}</span></span></div>`; }).join("")}
+    ${Object.keys(r.correct).filter(k => r.correct[k]).map(id => `<div class="opt" style="cursor:default"><span class="n">★</span><span class="t">${esc(r.bluffs[id])}<span class="who"><span class="badge ok">Nailed it</span> ${esc(nm(id))} knew it</span></span></div>`).join("")}
+    ${done ? `
+      <div class="card"><div class="wordlabel">Points this round</div>
+        ${r.points.length ? `<ul class="pointlist">${r.points.map(l => `<li><span>${esc(nm(l.id))} ${esc(l.why)}</span><b>+${l.n}</b></li>`).join("")}</ul>` : `<p>No points this round.</p>`}
+      </div>
+      <button class="btn" data-act="toscores">Scoreboard</button>`
+    : `<button class="btn" data-act="revealnext">${r.revealed === r.revealOrder.length - 1 ? "Reveal the REAL definition" : "Reveal next"}</button>`}
+  </div>`;
+};
+
+function scoreRows(showDelta){
+  const g = G(); const sorted = g.players.slice().sort((a,b) => b.score - a.score);
+  const top = sorted[0] ? sorted[0].score : 0;
+  return sorted.map((p,i) => `<div class="score ${p.score===top && top>0 ? "lead":""}">
+    <span class="pos">${i+1}</span>
+    <div style="flex:1"><div class="nm">${esc(p.name)}</div><div class="track"><i style="width:${Math.min(100, p.score / g.target * 100)}%"></i></div></div>
+    ${showDelta ? `<span class="d">${g.last[p.id] ? "+" + g.last[p.id] : ""}</span>` : ""}
+    <span class="pts">${p.score}</span></div>`).join("");
+}
+
+screens.scores = () => {
+  const w = winners();
+  return `<div class="screen">${topbar()}
+    <h1>Scoreboard</h1>
+    <p class="sub">First to ${G().target} points wins.</p>
+    ${scoreRows(true)}
+    <div style="height:10px"></div>
+    ${w.length ? `<button class="btn" data-act="towinner">🏆 And the winner is…</button>`
+      : `<button class="btn" data-act="nextround">Next round — ${esc(G().players[(G().dasher+1)%G().players.length].name)} deals</button>`}
+  </div>`;
+};
+
+screens.winner = () => {
+  const w = winners(); const names = w.map(p => esc(p.name));
+  setTimeout(confetti, 50);
+  return `<div class="screen" style="text-align:center">
+    <div class="trophy">🏆</div>
+    <h1 style="font-size:40px;color:var(--gold)">${names.join(" &amp; ")}</h1>
+    <p class="sub">${w.length > 1 ? "It's a tie! Master bluffers, all of them." : "Champion of balderdash!"}</p>
+    <div style="text-align:left">${scoreRows(false)}</div>
+    <div style="height:10px"></div>
+    <button class="btn" data-act="rematch">Play again (same players)</button>
+    <button class="btn ghost" data-act="endgame">Back to home</button>
+  </div>`;
+};
+
+screens.rules = () => `<div class="screen">
+  <div class="bar"><button class="iconbtn" data-act="back">‹</button><span class="meta">How to play</span><span style="width:40px"></span></div>
+  ${rulesHTML()}
+  <button class="btn" data-act="back">Got it</button></div>`;
+
+function rulesHTML(){ return `<div class="rules">
+  <h1>How to play</h1>
+  <p>You only need this one phone. Each round, one player is the <b>Dasher</b> and everyone else is a bluffer.</p>
+  <ol>
+    <li><b>The Dasher</b> sees a strange word and its real meaning, reads the word aloud, then passes the phone on.</li>
+    <li><b>Everyone else</b> secretly types a fake definition that sounds real, then hands the phone to the next person.</li>
+    <li><b>The Dasher</b> gets the phone back to fix typos (and mark anyone who actually knew the meaning).</li>
+    <li>The app shuffles the real definition in with the fakes. <b>The Dasher reads them all aloud</b>.</li>
+    <li><b>Everyone votes</b> for the one they think is real.</li>
+    <li>Then the big reveal!</li>
+  </ol>
+  <h2>Scoring</h2>
+  <ul>
+    <li><b>+2</b> for voting for the real definition</li>
+    <li><b>+1</b> for every player who votes for your fake</li>
+    <li><b>+3</b> for writing a definition that's basically right</li>
+    <li><b>+3</b> to the Dasher if nobody finds the real one</li>
+  </ul>
+  <p>The Dasher moves one seat each round. First to the target score wins.</p>
+  <h2>Bluffing tips</h2>
+  <ul>
+    <li>Write like a dictionary: “A small…”, “To …”, “Of or relating to…”.</li>
+    <li>Oddly specific details (“used in 18th-century Dutch cheese-making”) are very convincing.</li>
+    <li>Dasher: tweak the real definition so it sounds like the others.</li>
+  </ul></div>`; }
+
+screens.settings = () => `<div class="screen">
+  <div class="bar"><button class="iconbtn" data-act="home">‹</button><span class="meta">Settings</span><span style="width:40px"></span></div>
+  <h1>Settings</h1>
+  <h2>Voting</h2>
+  <div class="chips">
+    <button class="chip ${S.settings.privateVote?"on":""}" data-act="pv" data-v="1">Secret (pass the phone)</button>
+    <button class="chip ${!S.settings.privateVote?"on":""}" data-act="pv" data-v="0">Quick (no pass screen)</button>
+  </div>
+  <h2>Word deck</h2>
+  <p class="sub">${S.used.length} of ${WORDS.length} words used. Words won't repeat until the deck runs out.</p>
+  <button class="btn ghost" data-act="resetdeck">Shuffle the whole deck back in</button>
+  <h2>Players</h2>
+  <button class="btn ghost" data-act="clearplayers">Clear saved player names</button>
+  <div class="foot">Balderdash · Version ${VERSION}</div>
+</div>`;
+
+/* ---------- overlay (in-game menu) ---------- */
+function overlayHTML(){
+  if(S.overlay === "menu") return `<div class="overlay" data-act="closeov"><div class="sheet" data-stop>
+    <h2>Scores</h2>${scoreRows(false)}
+    <button class="btn ghost" data-act="ovrules">How to play</button>
+    <button class="btn ghost" data-act="skipround">Skip this round</button>
+    <button class="btn ghost" data-act="home">Pause (back to home)</button>
+    <button class="btn coral" data-act="endgame">End game</button>
+    <button class="link" data-act="closeov">Close</button></div></div>`;
+  if(S.overlay === "rules") return `<div class="overlay" data-act="closeov"><div class="sheet" data-stop>${rulesHTML()}<button class="btn" data-act="closeov">Close</button></div></div>`;
+  if(S.overlay && S.overlay.msg) return `<div class="overlay" data-act="closeov"><div class="sheet" data-stop>
+    <h2>${esc(S.overlay.msg)}</h2>
+    <div class="row"><button class="btn ghost" data-act="closeov">Cancel</button>
+    <button class="btn coral" data-act="${esc(S.overlay.action)}" data-ok="1">Yes</button></div></div></div>`;
+  return "";
+}
+
+/* ---------- render ---------- */
+function render(){
+  if(S.screen !== "home" && S.screen !== "setup" && S.screen !== "settings" && S.screen !== "rules" && !G()) S.screen = "home";
+  const fn = screens[S.screen] || screens.home;
+  app.innerHTML = fn() + overlayHTML();
+  const inp = document.getElementById("pname");
+  if(inp){ inp.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); act("add"); } }); }
+}
+
+/* ---------- actions ---------- */
+let backTo = "home";
+function act(a, el){
+  const r = R();
+  switch(a){
+    case "home": S.overlay = null; go("home"); break;
+    case "continue": go(S.lastScreen || "scores"); break;
+    case "setup": go("setup"); setTimeout(() => { const i = document.getElementById("pname"); if(i && !S.players.length) i.focus(); }, 50); break;
+    case "rules": backTo = S.screen; go("rules"); break;
+    case "back": go(backTo || "home"); break;
+    case "settings": go("settings"); break;
+    case "add": {
+      const i = document.getElementById("pname"); const v = (i.value || "").trim();
+      if(!v) return;
+      if(S.players.some(p => p.name.toLowerCase() === v.toLowerCase())){ i.value = ""; i.placeholder = "Name already added"; return; }
+      S.players.push({ id: uid(), name: v.slice(0,20) }); save(); render();
+      const n = document.getElementById("pname"); if(n) n.focus();
+      break; }
+    case "del": S.players.splice(+el.dataset.i, 1); save(); render(); break;
+    case "up": { const i = +el.dataset.i; if(i > 0){ [S.players[i-1], S.players[i]] = [S.players[i], S.players[i-1]]; save(); render(); } break; }
+    case "target": S.settings.target = +el.dataset.t; save(); render(); break;
+    case "start":
+      if(G() && !el.dataset.ok) return ask("Start a new game? The current game will be lost.", "start");
+      S.overlay = null; startGame(); break;
+    case "ready": { const h = S.handoff; pick = null; go(h.next); break; }
+    case "redraw": r.card = drawCard(); save(); render(); break;
+    case "custom": go("custom"); break;
+    case "customcancel": go("dasher"); break;
+    case "customsave": {
+      const w = document.getElementById("cword").value.trim(), d = document.getElementById("cdef").value.trim();
+      if(!w || !d){ alertField(!w ? "cword" : "cdef"); return; }
+      r.card = { word: w, def: tidy(d), custom:true }; go("dasher"); break; }
+    case "dasherdone": {
+      const d = document.getElementById("realdef").value.trim();
+      if(!d){ alertField("realdef"); return; }
+      r.card.def = tidy(d); r.wi = 0; nextWriter(); break; }
+    case "submitbluff": {
+      const t = document.getElementById("bluff").value.trim();
+      if(!t){ alertField("bluff"); return; }
+      r.bluffs[r.writers[r.wi]] = tidy(t); r.wi++; nextWriter(); break; }
+    case "reviewdone": {
+      document.querySelectorAll("[data-bluff]").forEach(t => { const v = tidy(t.value); if(v) r.bluffs[t.dataset.bluff] = v; });
+      r.correct = {};
+      document.querySelectorAll("[data-correct]").forEach(c => { if(c.checked) r.correct[c.dataset.correct] = true; });
+      buildOptions(); go("read"); break; }
+    case "startvote": pick = null; nextVoter(); break;
+    case "pick": pick = +el.dataset.i; render(); break;
+    case "castvote":
+      if(pick === null) return;
+      r.votes[r.voters[r.vi]] = pick; r.vi++; pick = null; nextVoter(); break;
+    case "revealnext": r.revealed++; save(); render(); setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior:"smooth" }), 30); break;
+    case "toscores": go("scores"); break;
+    case "nextround": nextRound(); break;
+    case "towinner": go("winner"); break;
+    case "rematch": startGame(); break;
+    case "endgame":
+      if(S.screen !== "winner" && !el.dataset.ok) return ask("End this game for everyone?", "endgame");
+      S.game = null; S.overlay = null; go("home"); break;
+    case "menu": S.overlay = "menu"; render(); break;
+    case "ovrules": S.overlay = "rules"; render(); break;
+    case "closeov": S.overlay = null; render(); break;
+    case "skipround":
+      if(!el.dataset.ok) return ask("Skip this round? No points will be scored.", "skipround");
+      S.overlay = null; nextRound(); break;
+    case "pv": S.settings.privateVote = el.dataset.v === "1"; save(); render(); break;
+    case "resetdeck": S.used = []; save(); render(); break;
+    case "clearplayers": if(!el.dataset.ok) return ask("Remove all saved player names?", "clearplayers"); S.overlay = null; S.players = []; save(); render(); break;
+  }
+}
+function ask(msg, action){ S.overlay = { msg, action }; render(); }
+function alertField(id){ const f = document.getElementById(id); if(f){ f.style.borderColor = "var(--coral)"; f.focus(); } }
+
+app.addEventListener("click", e => {
+  const stop = e.target.closest("[data-stop]");
+  const el = e.target.closest("[data-act]");
+  if(!el) return;
+  if(stop && !stop.contains(el)) return;
+  if(el.classList.contains("overlay") && e.target !== el) return;
+  const a = el.dataset.act; if(!a) return;
+  act(a, el);
+});
+
+/* remember where an in-progress game was so "Continue" resumes there */
+const _go = go;
+go = function(screen){
+  if(G() && screen !== "home" && screen !== "rules" && screen !== "settings" && screen !== "setup") S.lastScreen = screen;
+  _go(screen);
+};
+
+function confetti(){
+  const colors = ["#ffc93c","#ff6b6b","#2ec4b6","#fff8e7","#a78bfa"];
+  for(let i=0;i<80;i++){
+    const c = document.createElement("div"); c.className = "confetti";
+    c.style.left = Math.random()*100 + "vw"; c.style.background = colors[i % colors.length];
+    c.style.animationDuration = (2.2 + Math.random()*2.2) + "s"; c.style.animationDelay = (Math.random()*0.8) + "s";
+    document.body.appendChild(c); setTimeout(() => c.remove(), 5500);
+  }
+}
+
+render();
+</script>
+</body>
+</html>
