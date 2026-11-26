@@ -1,4 +1,4 @@
-/* Balderdash — own-phone online mode.
+/* HunterDASH — own-phone online mode.
    One phone hosts the room (it holds the game); everyone else connects to it with PeerJS.
    Answers go to the Dasher's phone; votes are said out loud and tapped in by the Dasher. */
 "use strict";
@@ -444,7 +444,7 @@ const OL = (() => {
     return `<div class="screen" style="text-align:center">${bar()}
       <div class="trophy">🏆</div>
       <h1 style="font-size:40px;color:var(--gold)">${V.winners.map(nmV).map(esc).join(" &amp; ")}</h1>
-      <p class="sub">${V.winners.length > 1 ? "It's a tie! Master bluffers, all of them." : "Champion of balderdash!"}</p>
+      <p class="sub">${V.winners.length > 1 ? "It's a tie! Master bluffers, all of them." : "Champion of HunterDASH!"}</p>
       <div style="text-align:left">${scoreList(false)}</div>
       <div style="height:10px"></div>
       ${V.isHost ? `<button class="btn" data-ol="rematch">Play again</button><button class="btn ghost" data-ol="lobby">Back to the lobby</button>` : `<p class="hint">Waiting for ${esc(nmV(V.hostId))} to start another game…</p>`}
@@ -482,9 +482,9 @@ const OL = (() => {
 
   async function share(){
     const link = inviteLink();
-    const text = `Join my Balderdash game! Room code ${code}`;
+    const text = `Join my HunterDASH game! Room code ${code}`;
     try{
-      if(navigator.share){ await navigator.share({ title: "Balderdash", text, url: link }); return; }
+      if(navigator.share){ await navigator.share({ title: "HunterDASH", text, url: link }); return; }
     }catch(e){ if(e && e.name === "AbortError") return; }
     try{ await navigator.clipboard.writeText(link); flash = "Link copied — paste it in a text to your family."; }
     catch(e){ flash = link; }

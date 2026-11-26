@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Balderdash</title>
+<title>HunterDASH</title>
 <meta name="theme-color" content="#24173f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Balderdash">
+<meta name="apple-mobile-web-app-title" content="HunterDASH">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <style>
 :root{
@@ -38,6 +38,10 @@ body{
 .logo{font-family:var(--serif);font-weight:800;font-size:54px;letter-spacing:-.02em;text-align:center;margin:28px 0 4px;
   background:linear-gradient(180deg,#fff 30%,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent;
   transform:rotate(-3deg)}
+.face{display:block;width:150px;height:150px;border-radius:50%;object-fit:cover;margin:22px auto 0;border:5px solid var(--gold);box-shadow:0 10px 30px rgba(0,0,0,.45);transform:rotate(-4deg);animation:wobble 4s ease-in-out infinite}
+@keyframes wobble{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg) scale(1.03)}}
+@media (prefers-reduced-motion:reduce){.face{animation:none}}
+.logo{margin-top:10px !important}
 .tag{text-align:center;opacity:.8;margin:0 0 30px;font-size:15px}
 
 h1{font-family:var(--serif);font-size:30px;margin:6px 0 6px;line-height:1.15}
@@ -152,7 +156,7 @@ label.lbl{display:block;font-size:13px;font-weight:700;color:var(--muted);margin
 <script src="peerjs.min.js"></script>
 <script>
 "use strict";
-const VERSION = "2.0";
+const VERSION = "2.1";
 const KEY = "balderdash_v1";
 const MIN_PLAYERS = 3;
 const app = document.getElementById("app");
@@ -275,7 +279,8 @@ const screens = {};
 
 screens.home = () => `
   <div class="screen">
-    <div class="logo">Balderdash</div>
+    <img class="face" src="face.jpg" alt="Hunter" width="150" height="150">
+    <div class="logo">HunterDASH</div>
     <p class="tag">The game of bluffing, fake definitions &amp; family fibs</p>
     ${typeof OL !== "undefined" ? OL.homeButtons() : ""}
     <button class="btn" data-act="olhost">Host a game</button>
@@ -526,7 +531,7 @@ screens.winner = () => {
   return `<div class="screen" style="text-align:center">
     <div class="trophy">🏆</div>
     <h1 style="font-size:40px;color:var(--gold)">${names.join(" &amp; ")}</h1>
-    <p class="sub">${w.length > 1 ? "It's a tie! Master bluffers, all of them." : "Champion of balderdash!"}</p>
+    <p class="sub">${w.length > 1 ? "It's a tie! Master bluffers, all of them." : "Champion of HunterDASH!"}</p>
     <div style="text-align:left">${scoreRows(false)}</div>
     <div style="height:10px"></div>
     <button class="btn" data-act="rematch">Play again (same players)</button>
@@ -595,7 +600,7 @@ screens.settings = () => `<div class="screen">
   <button class="btn ghost" data-act="resetdeck">Shuffle the whole deck back in</button>
   <h2>Players</h2>
   <button class="btn ghost" data-act="clearplayers">Clear saved player names</button>
-  <div class="foot">Balderdash · Version ${VERSION}</div>
+  <div class="foot">HunterDASH · Version ${VERSION}</div>
 </div>`;
 
 /* ---------- overlay (in-game menu) ---------- */
