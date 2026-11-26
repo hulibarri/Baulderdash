@@ -29,17 +29,15 @@ const OL = (() => {
   const writers = () => O.players.filter((p, i) => i !== O.dasher).map(p => p.id);
   const pname = id => (O.players.find(p => p.id === id) || {}).name || "?";
 
-  function draw(){
-    let pool = WORDS.map((_, i) => i).filter(i => !O.used.includes(i));
-    if(!pool.length){ O.used = []; pool = WORDS.map((_, i) => i); }
-    const i = pool[Math.floor(Math.random() * pool.length)];
-    O.used.push(i);
-    return { word: WORDS[i][0], def: WORDS[i][1] };
+  function draw(force){
+    O.used = (O.used || []).filter(x => typeof x === "string");
+    if(!O.cats || !O.cats.length) O.cats = CAT_KEYS.slice();
+    return drawFrom(O.used, O.cats, force);
   }
   function newRound(){
     O.round++;
     const c = draw();
-    O.r = { word: c.word, def: c.def, bluffs: {}, correct: {}, options: [], voters: [], votes: {}, points: [] };
+    O.r = { cat: c.cat, word: c.word, def: c.def, bluffs: {}, correct: {}, options: [], voters: [], votes: {}, points: [] };
     O.phase = "dasher";
   }
   function uniqueName(n){
@@ -51,14 +49,14 @@ const OL = (() => {
   function score(){
     const r = O.r, pts = {}, lines = [];
     const add = (id, n, why) => { pts[id] = (pts[id] || 0) + n; lines.push({ id, n, why }); };
-    writers().forEach(id => { if(r.correct[id]) add(id, 3, "knew the real meaning"); });
+    writers().forEach(id => { if(r.correct[id]) add(id, 3, "knew the real answer"); });
     const realIdx = r.options.findIndex(o => o.owner === null);
     let anyReal = false, anyVote = false;
     r.voters.forEach(v => {
       const i = r.votes[v];
       if(i == null || i < 0) return;
       anyVote = true;
-      if(i === realIdx){ anyReal = true; add(v, 2, "picked the real definition"); }
+      if(i === realIdx){ anyReal = true; add(v, 2, "picked the real one"); }
       else if(r.options[i] && r.options[i].owner){ add(r.options[i].owner, 1, "fooled " + pname(v)); }
     });
     if(anyVote && !anyReal) add(dasherP().id, 3, "stumped everyone (Dasher bonus)");
@@ -85,9 +83,11 @@ const OL = (() => {
           const c = conns[m.id]; if(c){ try{ c.send({ t: "kicked" }); }catch(e){} setTimeout(() => { try{ c.close(); }catch(e){} }, 300); delete conns[m.id]; }
           O.players = O.players.filter(p => p.id !== m.id);
         } break;
-      case "redraw": if(isD && O.phase === "dasher"){ const c = draw(); r.word = c.word; r.def = c.def; } break;
+      case "redraw": if(isD && O.phase === "dasher"){ const c = draw(r.cat); r.cat = c.cat; r.word = c.word; r.def = c.def; } break;
+      case "pickcat": if(isD && O.phase === "dasher" && CATS[m.c]){ const c = draw(m.c); r.cat = c.cat; r.word = c.word; r.def = c.def; } break;
+      case "togglecat": if(host && O.phase === "lobby" && CATS[m.c]){ if(!O.cats) O.cats = CAT_KEYS.slice(); toggleCat(O.cats, m.c); } break;
       case "custom":
-        if(isD && O.phase === "dasher" && m.word && m.def){ r.word = String(m.word).trim().slice(0, 40); r.def = tidy(m.def).slice(0, 400); } break;
+        if(isD && O.phase === "dasher" && m.word && m.def){ r.word = String(m.word).trim().slice(0, 120); r.def = tidy(m.def).slice(0, 400); } break;
       case "begin":
         if(isD && O.phase === "dasher"){ if(m.def && String(m.def).trim()) r.def = tidy(m.def).slice(0, 400); O.phase = "writing"; } break;
       case "bluff":
@@ -135,6 +135,7 @@ const OL = (() => {
     const v = {
       code: O.code, me: id, hostId: me.id, isHost: id === me.id, phase: O.phase, target: O.target, round: O.round,
       players: O.players.map(p => ({ id: p.id, name: p.name, score: p.score, online: p.id === me.id || !!(conns[p.id] && conns[p.id].open) })),
+      cats: O.cats || CAT_KEYS.slice(), cat: r ? r.cat : null,
       dasherId: r ? dasherP().id : null, isDasher: isD, last: O.last || {}, winners: O.phase === "winner" ? winners() : []
     };
     if(r){
@@ -334,34 +335,40 @@ const OL = (() => {
         ${V.isHost && p.id !== V.me ? `<button data-ol="kick" data-id="${esc(p.id)}" aria-label="Remove">✕</button>` : ""}</li>`).join("")}</ul>
       ${V.isHost ? `
         <p class="hint" style="text-align:left">Order = turn order for the Dasher. Join in seating order for the classic feel.</p>
+        <h2>Categories</h2>
+        ${catToggles(V.cats, "data-ol", "togglecat")}
+        <p class="hint" style="text-align:left;margin-top:8px">A random category each round — the Dasher can switch it.</p>
         <h2>Play to</h2>
         <div class="chips">${[15, 25, 35, 50].map(t => `<button class="chip ${V.target === t ? "on" : ""}" data-ol="target" data-v="${t}">${t} pts</button>`).join("")}</div>
         <div style="height:16px"></div>
         <button class="btn" data-ol="start" ${ok ? "" : "disabled"}>${ok ? "Start game" : `Waiting for ${3 - V.players.length} more player${3 - V.players.length === 1 ? "" : "s"}`}</button>`
-      : `<p class="hint">Waiting for ${esc(nmV(V.hostId))} to start the game…</p>`}
+      : `<h2>Categories</h2><p class="sub">${V.cats.map(k => CATS[k].emoji + " " + esc(CATS[k].name)).join(" · ")}</p><p class="hint">Waiting for ${esc(nmV(V.hostId))} to start the game…</p>`}
     </div>`;
   };
 
   S_.dasher = () => {
     if(!V.isDasher) return `<div class="screen">${bar()}${banner()}
       <div class="handoff" style="padding-top:8vh"><div class="emoji">🎩</div><p>This round's Dasher is</p><div class="big">${esc(nmV(V.dasherId))}</div>
-      <p>They're picking a word. Get ready to bluff!</p></div></div>`;
+      <p>They're picking a card. Get ready to bluff!</p></div></div>`;
+    const ci = catInfo(V.cat);
     if(customOpen) return `<div class="screen">${bar()}${banner()}
-      <h1>Your own word</h1>
-      <label class="lbl">Word</label><input type="text" id="olCWord" maxlength="40" autocomplete="off" value="${val("olCWord")}">
-      <label class="lbl">Real definition</label><textarea id="olCDef">${val("olCDef")}</textarea>
-      <button class="btn" data-ol="customsave">Use this word</button>
+      <h1>Make your own card</h1>
+      <p class="sub">${ci.emoji} ${esc(ci.name)} — ${esc(ci.q)}</p>
+      <label class="lbl">${esc(ci.label)}</label><input type="text" id="olCWord" maxlength="120" autocomplete="off" value="${val("olCWord")}">
+      <label class="lbl">The ${esc(ci.real)}</label><textarea id="olCDef">${val("olCDef")}</textarea>
+      <button class="btn" data-ol="customsave">Use this card</button>
       <button class="link" data-ol="customcancel">Cancel</button></div>`;
     return `<div class="screen">${bar()}${banner()}
       <h1>You're the Dasher 🎩</h1>
-      <p class="sub">Only you can see the real meaning. Read the word out loud and spell it.</p>
-      <div class="card"><div class="wordlabel">The word</div><div class="word">${esc(V.word)}</div></div>
-      <label class="lbl">Real definition — tweak it to sound like a player wrote it</label>
+      <p class="sub">Only you can see the ${esc(ci.real)}. ${esc(ci.read)}</p>
+      ${wordCard({ cat: V.cat, word: V.word }, true)}
+      <label class="lbl">The ${esc(ci.real)} — tweak it to sound like a player wrote it</label>
       <textarea id="olDef">${val("olDef", V.def)}</textarea>
       <div class="row">
-        <button class="btn ghost" data-ol="redraw">🔀 Different word</button>
-        <button class="btn ghost" data-ol="custom">✏️ My own word</button>
+        <button class="btn ghost" data-ol="redraw">🔀 Different card</button>
+        <button class="btn ghost" data-ol="custom">✏️ Make my own</button>
       </div>
+      ${catPicker(V.cat, "data-ol", "pickcat")}
       <button class="btn" data-ol="begin">I read it out — let everyone write</button>
     </div>`;
   };
@@ -369,7 +376,7 @@ const OL = (() => {
   S_.writing = () => {
     const n = V.submitted.length, tot = V.writers.length;
     if(V.isDasher) return `<div class="screen">${bar()}${banner()}
-      <div class="card"><div class="wordlabel">${esc(V.word)} · the real meaning</div><div class="def" style="margin-top:6px">${esc(V.def)}</div></div>
+      <div class="card"><div class="wordlabel">${esc(V.word)} · the ${esc(catInfo(V.cat).real)}</div><div class="def" style="margin-top:6px">${esc(V.def)}</div></div>
       <h2>Answers in: ${n} of ${tot}</h2>
       <p class="sub">They show up here as people send them. If someone basically got it right, tap “Basically right” — they get 3 points and their answer is left out.</p>
       ${V.bluffs.map(b => `<div class="rv"><div class="top"><span>${b.text ? "✅" : "⏳"} ${esc(nmV(b.id))}</span>
@@ -383,10 +390,10 @@ const OL = (() => {
       <p class="hint">Waiting for everyone… ${n} of ${tot} in</p>
       <button class="btn ghost" data-ol="edit">Change my answer</button></div>`;
     return `<div class="screen">${bar()}${banner()}
-      <p class="sub" style="margin-bottom:4px">Make up a definition that sounds real.</p>
-      <div class="card"><div class="wordlabel">The word</div><div class="word">${esc(V.word)}</div></div>
-      <textarea id="olBluff" maxlength="300" placeholder="A small brass instrument used by 17th-century chimney sweeps…">${val("olBluff", V.myBluff || "")}</textarea>
-      <p class="hint">Think you know it? Write the real meaning — the Dasher can give you 3 points.</p>
+      <p class="sub" style="margin-bottom:4px">Make up an answer that sounds real.</p>
+      ${wordCard({ cat: V.cat, word: V.word }, true)}
+      <textarea id="olBluff" maxlength="300" placeholder="${esc(catInfo(V.cat).ph)}">${val("olBluff", V.myBluff || "")}</textarea>
+      <p class="hint">Think you know it? Write the real answer — the Dasher can give you 3 points.</p>
       <button class="btn" data-ol="sendbluff">Send to ${esc(nmV(V.dasherId))}</button>
       ${editing ? `<button class="link" data-ol="canceledit">Keep my old answer</button>` : ""}
       <p class="hint">${n} of ${tot} answers in</p></div>`;
@@ -395,12 +402,12 @@ const OL = (() => {
   S_.reading = () => {
     const list = V.options.map((o, i) => `<div class="opt" style="cursor:default"><span class="n">${i + 1}</span><span class="t">${esc(o.text)}${o.mine ? `<span class="who">That's yours</span>` : ""}</span></div>`).join("");
     if(!V.isDasher) return `<div class="screen">${bar()}${banner()}
-      <h1>${esc(V.word)}</h1>
+      ${wordCard({ cat: V.cat, word: V.word }, true)}
       <p class="sub">${esc(nmV(V.dasherId))} is reading them aloud. When it's your turn, say the number you think is real!</p>${list}</div>`;
     const ready = V.voters.every(v => V.votes[v] != null);
     return `<div class="screen">${bar()}${banner()}
       <h1>${esc(V.word)}</h1>
-      <p class="sub">Read every definition aloud — straight face! Everyone sees this list on their phone.</p>${list}
+      <p class="sub">Read every answer aloud — straight face! Everyone sees this list on their phone.</p>${list}
       <h2>Votes</h2>
       <p class="sub">Go around the table. Tap the number each person says.</p>
       ${V.voters.length ? V.voters.map(v => `<div class="rv"><div class="top"><span>${esc(nmV(v))}</span></div><div class="chips">
@@ -427,7 +434,7 @@ const OL = (() => {
     const nextD = V.players[(V.players.findIndex(p => p.id === V.dasherId) + 1) % V.players.length];
     return `<div class="screen">${bar()}${banner()}
       <h1>The big reveal</h1>
-      <p class="sub">“${esc(V.word)}” really means: <b>${esc(V.def)}</b></p>
+      <p class="sub">${catInfo(V.cat).emoji} “${esc(V.word)}” — the ${esc(catInfo(V.cat).real)}: <b>${esc(V.def)}</b></p>
       ${revealList()}
       <div class="card"><div class="wordlabel">Points this round</div>
         ${V.points.length ? `<ul class="pointlist">${V.points.map(l => `<li><span>${esc(nmV(l.id))} ${esc(l.why)}</span><b>+${l.n}</b></li>`).join("")}</ul>` : `<p>No points this round.</p>`}</div>
@@ -500,7 +507,7 @@ const OL = (() => {
         if(!n){ markBad("olName"); return; }
         me.name = n.slice(0, 20); ls.set(LS_ME, me);
         isHost = true; code = genCode();
-        O = { code, players: [{ id: me.id, name: me.name, score: 0 }], target: 25, phase: "lobby", dasher: 0, round: 0, r: null, used: [], last: {} };
+        O = { code, players: [{ id: me.id, name: me.name, score: 0 }], cats: (S.settings.cats || CAT_KEYS).slice(), target: 25, phase: "lobby", dasher: 0, round: 0, r: null, used: [], last: {} };
         V = viewFor(me.id);
         openHostPeer(false); break; }
       case "dojoin": {
@@ -520,6 +527,8 @@ const OL = (() => {
       case "start": send({ t: "start" }); break;
       case "kick": send({ t: "kick", id: el.dataset.id }); break;
       case "redraw": delete drafts.olDef; send({ t: "redraw" }); break;
+      case "pickcat": delete drafts.olDef; send({ t: "pickcat", c: el.dataset.c }); break;
+      case "togglecat": send({ t: "togglecat", c: el.dataset.c }); break;
       case "custom": customOpen = true; render(); break;
       case "customcancel": customOpen = false; render(); break;
       case "customsave": {

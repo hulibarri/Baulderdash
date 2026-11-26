@@ -42,6 +42,10 @@ body{
 @keyframes wobble{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg) scale(1.03)}}
 @media (prefers-reduced-motion:reduce){.face{animation:none}}
 .logo{margin-top:10px !important}
+.catbadge{display:inline-block;background:var(--ink);color:var(--gold);font-size:12px;font-weight:800;letter-spacing:.04em;padding:4px 10px;border-radius:999px;margin-bottom:8px}
+.word.long{font-size:25px;line-height:1.25}
+.chip.mini{padding:7px 12px;font-size:14px}
+.catq{font-family:var(--serif);font-size:17px;text-align:center;color:var(--muted);margin-top:8px;font-style:italic}
 .tag{text-align:center;opacity:.8;margin:0 0 30px;font-size:15px}
 
 h1{font-family:var(--serif);font-size:30px;margin:6px 0 6px;line-height:1.15}
@@ -153,17 +157,18 @@ label.lbl{display:block;font-size:13px;font-weight:700;color:var(--muted);margin
 <body>
 <div id="app"></div>
 <script src="words.js"></script>
+<script src="cards.js"></script>
 <script src="peerjs.min.js"></script>
 <script>
 "use strict";
-const VERSION = "2.1";
+const VERSION = "2.2";
 const KEY = "balderdash_v1";
 const MIN_PLAYERS = 3;
 const app = document.getElementById("app");
 
 /* ---------- state ---------- */
 function fresh(){
-  return { screen:"home", players:[], settings:{ target:25, privateVote:true, mode:"paper" }, used:[], game:null, handoff:null, overlay:null };
+  return { screen:"home", players:[], settings:{ target:25, privateVote:true, mode:"paper", cats: CAT_KEYS.slice() }, used:[], game:null, handoff:null, overlay:null };
 }
 let S = load();
 function load(){
@@ -188,12 +193,30 @@ function go(screen){ S.screen = screen; save(); render(); window.scrollTo(0,0); 
 function handoff(id, next, msg){ S.handoff = { id, next, msg }; go("handoff"); }
 
 /* ---------- deck ---------- */
-function drawCard(){
-  let pool = WORDS.map((_, i) => i).filter(i => !S.used.includes(i));
-  if(!pool.length){ S.used = []; pool = WORDS.map((_, i) => i); }
-  const i = pool[Math.floor(Math.random() * pool.length)];
-  S.used.push(i);
-  return { word: WORDS[i][0], def: WORDS[i][1], custom:false };
+function drawCard(force){
+  S.used = (S.used || []).filter(x => typeof x === "string");
+  return Object.assign(drawFrom(S.used, S.settings.cats, force), { custom:false });
+}
+/* shared by one-phone and online screens */
+function wordCard(card, showQ){
+  const c = catInfo(card.cat); const long = String(card.word).length > 22;
+  return `<div class="card" style="text-align:center">
+    <span class="catbadge">${c.emoji} ${esc(c.name)}</span>
+    <div class="wordlabel">${esc(c.label)}</div>
+    <div class="word ${long ? "long" : ""}">${esc(card.word)}</div>
+    ${showQ ? `<div class="catq">${esc(c.q)}</div>` : ""}
+  </div>`;
+}
+function catPicker(cur, attr, act){
+  return `<label class="lbl">Switch category</label><div class="chips">${CAT_KEYS.map(k => `<button class="chip mini ${cur === k ? "on" : ""}" ${attr}="${act}" data-c="${k}">${CATS[k].emoji} ${esc(CATS[k].name)}</button>`).join("")}</div><div style="height:6px"></div>`;
+}
+function catToggles(sel, attr, act){
+  return `<div class="chips">${CAT_KEYS.map(k => `<button class="chip mini ${sel.includes(k) ? "on" : ""}" ${attr}="${act}" data-c="${k}">${CATS[k].emoji} ${esc(CATS[k].name)}</button>`).join("")}</div>`;
+}
+function toggleCat(list, k){
+  const i = list.indexOf(k);
+  if(i >= 0){ if(list.length > 1) list.splice(i, 1); } else list.push(k);
+  return list;
 }
 
 /* ---------- game flow ---------- */
@@ -213,7 +236,7 @@ function newRound(){
 }
 function nextWriter(){
   const r = R();
-  if(r.wi < r.writers.length) handoff(r.writers[r.wi], "write", "Time to write a fake definition.");
+  if(r.wi < r.writers.length) handoff(r.writers[r.wi], "write", "Time to write a fake answer.");
   else handoff(dasher().id, "review", "Everyone's in! Dasher, check the answers.");
 }
 function buildOptions(){
@@ -235,12 +258,12 @@ function finishVoting(){
   const g = G(), r = R();
   const pts = {}; const lines = [];
   const add = (id, n, why) => { pts[id] = (pts[id]||0) + n; lines.push({ id, n, why }); };
-  r.writers.forEach(id => { if(r.correct[id]) add(id, 3, "knew the real meaning"); });
+  r.writers.forEach(id => { if(r.correct[id]) add(id, 3, "knew the real answer"); });
   const realIdx = r.options.findIndex(o => o.owner === null);
   let anyReal = false;
   r.voters.forEach(id => {
     const v = r.votes[id];
-    if(v === realIdx){ anyReal = true; add(id, 2, "picked the real definition"); }
+    if(v === realIdx){ anyReal = true; add(id, 2, "picked the real one"); }
     else if(v != null && r.options[v] && r.options[v].owner){ add(r.options[v].owner, 1, "fooled " + nm(id)); }
   });
   if(!anyReal && r.voters.length) add(dasher().id, 3, "stumped everyone (Dasher bonus)");
@@ -281,7 +304,7 @@ screens.home = () => `
   <div class="screen">
     <img class="face" src="face.jpg" alt="Hunter" width="150" height="150">
     <div class="logo">HunterDASH</div>
-    <p class="tag">The game of bluffing, fake definitions &amp; family fibs</p>
+    <p class="tag">The game of bluffing, fake answers &amp; family fibs</p>
     ${typeof OL !== "undefined" ? OL.homeButtons() : ""}
     <button class="btn" data-act="olhost">Host a game</button>
     <button class="btn teal" data-act="oljoin">Join a game</button>
@@ -293,7 +316,7 @@ screens.home = () => `
       <button class="btn ghost" data-act="rules">How to play</button>
       <button class="btn ghost" data-act="settings">Settings</button>
     </div>
-    <div class="foot">${WORDS.length} words in the deck · Version ${VERSION}</div>
+    <div class="foot">${deckTotal()} cards in the deck · Version ${VERSION}</div>
   </div>`;
 
 screens.setup = () => `
@@ -316,6 +339,9 @@ screens.setup = () => `
       <button class="chip ${S.settings.mode==="phone"?"on":""}" data-act="mode" data-m="phone">📱 Typed on the phone</button>
     </div>
     <p class="hint" style="text-align:left;margin-top:8px">${S.settings.mode==="paper" ? "Write on slips and vote out loud. The phone gives the Dasher a word and keeps score." : "Pass the phone around to type answers and vote in secret."}</p>
+    <h2>Categories</h2>
+    ${catToggles(S.settings.cats, "data-act", "togglecat")}
+    <p class="hint" style="text-align:left;margin-top:8px">A random category each round — the Dasher can switch it.</p>
     <h2>Play to</h2>
     <div class="chips">
       ${[15,25,35,50].map(t => `<button class="chip ${S.settings.target===t?"on":""}" data-act="target" data-t="${t}">${t} pts</button>`).join("")}
@@ -348,19 +374,17 @@ screens.dasher = () => {
   const r = R();
   if(G().mode === "paper") return `<div class="screen">${topbar()}
     <h1>You're the Dasher 🎩</h1>
-    <p class="sub">Only you see the real meaning. Copy it onto your slip (in your own words, so it blends in), then read the word aloud and spell it.</p>
-    <div class="card">
-      <div class="wordlabel">The word</div>
-      <div class="word">${esc(r.card.word)}</div>
-      <div class="def" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">${esc(r.card.def)}</div>
-    </div>
+    <p class="sub">Only you see the ${esc(catInfo(r.card.cat).real)}. Copy it onto your slip (in your own words, so it blends in). ${esc(catInfo(r.card.cat).read)}</p>
+    ${wordCard(r.card, true)}
+    <div class="card"><div class="wordlabel">The ${esc(catInfo(r.card.cat).real)}</div><div class="def" style="margin-top:6px">${esc(r.card.def)}</div></div>
     <div class="row">
-      <button class="btn ghost" data-act="redraw">🔀 Different word</button>
-      <button class="btn ghost" data-act="custom">✏️ My own word</button>
+      <button class="btn ghost" data-act="redraw">🔀 Different card</button>
+      <button class="btn ghost" data-act="custom">✏️ Make my own</button>
     </div>
+    ${catPicker(r.card.cat, "data-act", "pickcat")}
     <div class="card" style="background:rgba(255,255,255,.08);color:#fff;box-shadow:none">
       <ol style="margin:0;padding-left:20px;line-height:1.6">
-        <li>Everyone writes a fake definition on a slip.</li>
+        <li>Everyone writes a fake answer on a slip.</li>
         <li>Collect the slips plus yours, shuffle, and read them all aloud.</li>
         <li>Go around the table: each player says which one they think is real.</li>
       </ol>
@@ -369,42 +393,37 @@ screens.dasher = () => {
   </div>`;
   return `<div class="screen">${topbar()}
     <h1>You're the Dasher 🎩</h1>
-    <p class="sub">Only you see the real meaning. Read the word out loud (and spell it), then pass the phone around.</p>
-    <div class="card">
-      <div class="wordlabel">The word</div>
-      <div class="word">${esc(r.card.word)}</div>
-    </div>
-    <label class="lbl">Real definition — tweak it to sound like a player wrote it</label>
+    <p class="sub">Only you see the ${esc(catInfo(r.card.cat).real)}. ${esc(catInfo(r.card.cat).read)} Then pass the phone around.</p>
+    ${wordCard(r.card, true)}
+    <label class="lbl">The ${esc(catInfo(r.card.cat).real)} — tweak it to sound like a player wrote it</label>
     <textarea id="realdef">${esc(r.card.def)}</textarea>
     <div class="row">
-      <button class="btn ghost" data-act="redraw">🔀 Different word</button>
-      <button class="btn ghost" data-act="custom">✏️ My own word</button>
+      <button class="btn ghost" data-act="redraw">🔀 Different card</button>
+      <button class="btn ghost" data-act="custom">✏️ Make my own</button>
     </div>
+    ${catPicker(r.card.cat, "data-act", "pickcat")}
     <button class="btn" data-act="dasherdone">I read it aloud — pass it on</button>
   </div>`;
 };
 
-screens.custom = () => `<div class="screen">${topbar()}
-    <h1>Your own word</h1>
-    <p class="sub">Got a strange word from a dictionary? Use it here.</p>
-    <label class="lbl">Word</label>
-    <input type="text" id="cword" maxlength="40" autocomplete="off">
-    <label class="lbl">Real definition</label>
+screens.custom = () => { const c = catInfo(R().card.cat); return `<div class="screen">${topbar()}
+    <h1>Make your own card</h1>
+    <p class="sub">${c.emoji} ${esc(c.name)} — ${esc(c.q)}</p>
+    <label class="lbl">${esc(c.label)}</label>
+    <input type="text" id="cword" maxlength="120" autocomplete="off">
+    <label class="lbl">The ${esc(c.real)}</label>
     <textarea id="cdef"></textarea>
-    <button class="btn" data-act="customsave">Use this word</button>
+    <button class="btn" data-act="customsave">Use this card</button>
     <button class="link" data-act="customcancel">Cancel</button>
-  </div>`;
+  </div>`; };
 
 screens.write = () => {
   const r = R(); const id = r.writers[r.wi];
   return `<div class="screen">${topbar()}
-    <p class="sub" style="margin-bottom:4px">${esc(nm(id))}, make up a definition that sounds real.</p>
-    <div class="card">
-      <div class="wordlabel">The word</div>
-      <div class="word">${esc(r.card.word)}</div>
-    </div>
-    <textarea id="bluff" placeholder="A small brass instrument used by 17th-century chimney sweeps…" maxlength="300">${esc(r.bluffs[id] || "")}</textarea>
-    <p class="hint">Think you actually know it? Write the real meaning — the Dasher can award you 3 points.</p>
+    <p class="sub" style="margin-bottom:4px">${esc(nm(id))}, make up an answer that sounds real.</p>
+    ${wordCard(r.card, true)}
+    <textarea id="bluff" placeholder="${esc(catInfo(r.card.cat).ph)}" maxlength="300">${esc(r.bluffs[id] || "")}</textarea>
+    <p class="hint">Think you actually know it? Write the real answer — the Dasher can award you 3 points.</p>
     <button class="btn" data-act="submitbluff">Submit &amp; hide</button>
     <p class="hint">${r.wi + 1} of ${r.writers.length}</p>
   </div>`;
@@ -414,8 +433,8 @@ screens.review = () => {
   const r = R();
   return `<div class="screen">${topbar()}
     <h1>Dasher check</h1>
-    <p class="sub">Fix any typos so no answer gives itself away. If someone basically got the real meaning, mark it — they get 3 points and it's left out of the vote.</p>
-    <div class="card"><div class="wordlabel">${esc(r.card.word)} · real meaning</div><div class="def" style="margin-top:6px">${esc(r.card.def)}</div></div>
+    <p class="sub">Fix any typos so no answer gives itself away. If someone basically got the real answer, mark it — they get 3 points and it's left out of the vote.</p>
+    <div class="card"><div class="wordlabel">${esc(r.card.word)} · ${esc(catInfo(r.card.cat).real)}</div><div class="def" style="margin-top:6px">${esc(r.card.def)}</div></div>
     ${r.writers.map(id => `<div class="rv">
       <div class="top"><span>${esc(nm(id))}</span>
         <label class="toggle"><input type="checkbox" data-correct="${id}" ${r.correct[id] ? "checked" : ""}> Basically right</label></div>
@@ -460,7 +479,7 @@ screens.read = () => {
   const r = R();
   return `<div class="screen">${topbar()}
     <h1>${esc(r.card.word)}</h1>
-    <p class="sub">${esc(dasher().name)}, read every definition aloud — slowly, with a straight face.</p>
+    <p class="sub">${esc(dasher().name)}, read every answer aloud — slowly, with a straight face.</p>
     ${r.options.map((o,i) => `<div class="opt" style="cursor:default"><span class="n">${i+1}</span><span class="t">${esc(o.text)}</span></div>`).join("")}
     ${r.voters.length ? `<button class="btn" data-act="startvote">Start voting</button>` : `<p class="hint">Everyone knew it! No vote needed.</p><button class="btn" data-act="startvote">Show results</button>`}
   </div>`;
@@ -471,7 +490,7 @@ screens.vote = () => {
   const r = R(); const id = r.voters[r.vi];
   return `<div class="screen">${topbar()}
     <h1>${esc(nm(id))}, which is real?</h1>
-    <p class="sub">“${esc(r.card.word)}” means…</p>
+    <p class="sub">${esc(catInfo(r.card.cat).q)} “${esc(r.card.word)}”</p>
     ${r.options.map((o,i) => {
       const mine = o.owner === id;
       return `<button class="opt ${mine?"mine":""} ${pick===i?"sel":""}" data-act="${mine?"":"pick"}" data-i="${i}" ${mine?"disabled":""}>
@@ -488,7 +507,7 @@ screens.reveal = () => {
   const voteNames = i => r.voters.filter(v => r.votes[v] === i).map(nm);
   return `<div class="screen">${topbar()}
     <h1>The big reveal</h1>
-    <p class="sub">“${esc(r.card.word)}” — ${done ? "here's the truth!" : "tap to unmask each definition."}</p>
+    <p class="sub">“${esc(r.card.word)}” — ${done ? "here's the truth!" : "tap to unmask each answer."}</p>
     ${shown.map(i => { const o = r.options[i]; const vn = voteNames(i); const real = o.owner === null;
       return `<div class="opt ${real?"real":""}" style="cursor:default"><span class="n">${i+1}</span><span class="t">${esc(o.text)}
         <span class="who">${real ? `<span class="badge real">The real one</span>` : `<span class="badge fake">Fake</span> by ${esc(nm(o.owner))}`}</span>
@@ -499,7 +518,7 @@ screens.reveal = () => {
         ${r.points.length ? `<ul class="pointlist">${r.points.map(l => `<li><span>${esc(nm(l.id))} ${esc(l.why)}</span><b>+${l.n}</b></li>`).join("")}</ul>` : `<p>No points this round.</p>`}
       </div>
       <button class="btn" data-act="toscores">Scoreboard</button>`
-    : `<button class="btn" data-act="revealnext">${r.revealed === r.revealOrder.length - 1 ? "Reveal the REAL definition" : "Reveal next"}</button>`}
+    : `<button class="btn" data-act="revealnext">${r.revealed === r.revealOrder.length - 1 ? "Reveal the REAL answer" : "Reveal next"}</button>`}
   </div>`;
 };
 
@@ -550,33 +569,36 @@ function rulesHTML(){ return `<div class="rules">
   <h2>Everyone on their own phone</h2>
   <ol>
     <li>One person taps <b>Host a game</b> and keeps that page open. Everyone else taps <b>Join a game</b> and enters the room code, or opens the invite link.</li>
-    <li>The Dasher's phone shows a strange word and its real meaning. The Dasher reads the word aloud.</li>
-    <li>Everyone types a fake definition on their phone. It's sent straight to the Dasher.</li>
+    <li>The Dasher's phone shows a card — a weird word, a person, some initials, a movie, a law or a date — with the real answer. The Dasher reads it aloud.</li>
+    <li>Everyone types a fake answer on their phone. It's sent straight to the Dasher.</li>
     <li>The Dasher shuffles. The real one is mixed in, and the numbered list shows on everyone's phone. The Dasher reads them all aloud.</li>
     <li>Go around the table and say your vote out loud. The Dasher taps them in.</li>
     <li>Every phone shows the big reveal and the scores.</li>
   </ol>
   <h2>One phone, on paper</h2>
   <ol>
-    <li>The Dasher privately sees a word and its real meaning, copies the meaning onto a slip, and reads the word aloud.</li>
-    <li>Everyone writes a fake definition and hands it to the Dasher.</li>
+    <li>The Dasher privately sees the card and the real answer, copies the answer onto a slip, and reads the card aloud.</li>
+    <li>Everyone writes a fake answer and hands it to the Dasher.</li>
     <li>The Dasher shuffles the slips and reads them all aloud. Each player says which one they think is real.</li>
     <li>The Dasher taps in the votes, and the app does the scoring.</li>
   </ol>
   <h2>One phone, passed around</h2>
   <ol>
-    <li><b>The Dasher</b> sees a strange word and its real meaning, reads the word aloud, then passes the phone on.</li>
-    <li><b>Everyone else</b> secretly types a fake definition that sounds real, then hands the phone to the next person.</li>
+    <li><b>The Dasher</b> sees the card and the real answer, reads the card aloud, then passes the phone on.</li>
+    <li><b>Everyone else</b> secretly types a fake answer that sounds real, then hands the phone to the next person.</li>
     <li><b>The Dasher</b> gets the phone back to fix typos (and mark anyone who actually knew the meaning).</li>
-    <li>The app shuffles the real definition in with the fakes. <b>The Dasher reads them all aloud</b>.</li>
+    <li>The app shuffles the real answer in with the fakes. <b>The Dasher reads them all aloud</b>.</li>
     <li><b>Everyone votes</b> for the one they think is real.</li>
     <li>Then the big reveal!</li>
   </ol>
+  <h2>The categories</h2>
+  <p>Each round gets a random category, like rolling the die in the board game. The Dasher can switch it.</p>
+  <ul>${CAT_KEYS.map(k => `<li>${CATS[k].emoji} <b>${esc(CATS[k].name)}</b> — ${esc(CATS[k].q)}</li>`).join("")}</ul>
   <h2>Scoring</h2>
   <ul>
-    <li><b>+2</b> for voting for the real definition</li>
+    <li><b>+2</b> for voting for the real answer</li>
     <li><b>+1</b> for every player who votes for your fake</li>
-    <li><b>+3</b> for writing a definition that's basically right</li>
+    <li><b>+3</b> for writing an answer that's basically right</li>
     <li><b>+3</b> to the Dasher if nobody finds the real one</li>
   </ul>
   <p>The Dasher moves one seat each round. First to the target score wins.</p>
@@ -584,7 +606,7 @@ function rulesHTML(){ return `<div class="rules">
   <ul>
     <li>Write like a dictionary: “A small…”, “To …”, “Of or relating to…”.</li>
     <li>Oddly specific details (“used in 18th-century Dutch cheese-making”) are very convincing.</li>
-    <li>Dasher: tweak the real definition so it sounds like the others.</li>
+    <li>Dasher: tweak the real answer so it sounds like the others.</li>
   </ul></div>`; }
 
 screens.settings = () => `<div class="screen">
@@ -596,7 +618,10 @@ screens.settings = () => `<div class="screen">
     <button class="chip ${!S.settings.privateVote?"on":""}" data-act="pv" data-v="0">Quick (no pass screen)</button>
   </div>
   <h2>Word deck</h2>
-  <p class="sub">${S.used.length} of ${WORDS.length} words used. Words won't repeat until the deck runs out.</p>
+  <p class="sub">${deckTotal()} cards. Cards won't repeat until a category runs out.</p>
+  <h2>Categories</h2>
+  ${catToggles(S.settings.cats, "data-act", "togglecat")}
+  <div style="height:12px"></div>
   <button class="btn ghost" data-act="resetdeck">Shuffle the whole deck back in</button>
   <h2>Players</h2>
   <button class="btn ghost" data-act="clearplayers">Clear saved player names</button>
@@ -659,13 +684,15 @@ function act(a, el){
       if(G() && !el.dataset.ok) return ask("Start a new game? The current game will be lost.", "start");
       S.overlay = null; startGame(); break;
     case "ready": { const h = S.handoff; pick = null; go(h.next); break; }
-    case "redraw": r.card = drawCard(); save(); render(); break;
+    case "redraw": r.card = drawCard(r.card.cat); save(); render(); break;
+    case "pickcat": r.card = drawCard(el.dataset.c); save(); render(); break;
+    case "togglecat": toggleCat(S.settings.cats, el.dataset.c); save(); render(); break;
     case "custom": go("custom"); break;
     case "customcancel": go("dasher"); break;
     case "customsave": {
       const w = document.getElementById("cword").value.trim(), d = document.getElementById("cdef").value.trim();
       if(!w || !d){ alertField(!w ? "cword" : "cdef"); return; }
-      r.card = { word: w, def: tidy(d), custom:true }; go("dasher"); break; }
+      r.card = { cat: r.card.cat, word: w, def: tidy(d), custom:true }; go("dasher"); break; }
     case "dasherdone": {
       const d = document.getElementById("realdef").value.trim();
       if(!d){ alertField("realdef"); return; }
