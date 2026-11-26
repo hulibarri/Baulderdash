@@ -5,7 +5,8 @@
 const OL = (() => {
   const PREFIX = "baulderdash-room-";
   const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const LS_ME = "bd_me", LS_HOST = "bd_host", LS_CLIENT = "bd_client";
+  const LS_ME = "bd_me", LS_SESS = "bd_sess";
+  try{ localStorage.removeItem("bd_host"); localStorage.removeItem("bd_client"); }catch(e){}
   const ls = {
     get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
     set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
@@ -21,7 +22,7 @@ const OL = (() => {
   const drafts = {};
   const peerOpts = () => Object.assign({ debug: 0 }, window.PEER_OPTS || {});
   const genCode = () => Array.from({ length: 4 }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]).join("");
-  const peerId = c => PREFIX + c.toLowerCase();
+  const peerId = (c, ep) => PREFIX + c.toLowerCase() + (ep ? "-" + ep : "");
   const inviteLink = () => location.href.split(/[?#]/)[0] + "?join=" + code;
 
   /* =================== HOST: game logic =================== */
@@ -68,6 +69,14 @@ const OL = (() => {
     return max >= O.target ? O.players.filter(p => p.score === max).map(p => p.id) : [];
   }
 
+  // Next Dasher, skipping anyone who isn't connected right now.
+  function advanceDasher(){
+    const n = O.players.length;
+    for(let k = 1; k <= n; k++){
+      const i = (O.dasher + k) % n, id = O.players[i].id;
+      if(id === O.hostId || (conns[id] && conns[id].open) || k === n){ O.dasher = i; return; }
+    }
+  }
   function hostAct(from, m){
     const r = O.r;
     const isD = r && dasherP() && dasherP().id === from;
@@ -116,10 +125,10 @@ const OL = (() => {
       case "next":
         if((isD || host) && O.phase === "reveal"){
           if(winners().length) O.phase = "winner";
-          else { O.dasher = (O.dasher + 1) % O.players.length; newRound(); }
+          else { advanceDasher(); newRound(); }
         } break;
       case "skipdasher":
-        if(host && ["dasher", "writing", "reading"].includes(O.phase)){ O.round--; O.dasher = (O.dasher + 1) % O.players.length; newRound(); } break;
+        if(host && ["dasher", "writing", "reading"].includes(O.phase)){ O.round--; advanceDasher(); newRound(); } break;
       case "lobby": if(host){ O.phase = "lobby"; O.r = null; O.players.forEach(p => p.score = 0); O.last = {}; } break;
       case "rematch":
         if(host && O.phase === "winner"){ O.players.forEach(p => p.score = 0); O.last = {}; O.round = 0; O.dasher = 0; newRound(); } break;
@@ -133,8 +142,8 @@ const OL = (() => {
     const isD = !!(r && dasherP() && dasherP().id === id);
     const pub = O.phase === "reveal" || O.phase === "winner";
     const v = {
-      code: O.code, me: id, hostId: me.id, isHost: id === me.id, phase: O.phase, target: O.target, round: O.round,
-      players: O.players.map(p => ({ id: p.id, name: p.name, score: p.score, online: p.id === me.id || !!(conns[p.id] && conns[p.id].open) })),
+      code: O.code, me: id, hostId: O.hostId, isHost: id === O.hostId, phase: O.phase, target: O.target, round: O.round,
+      players: O.players.map(p => ({ id: p.id, name: p.name, score: p.score, online: p.id === O.hostId || !!(conns[p.id] && conns[p.id].open) })),
       cats: O.cats || CAT_KEYS.slice(), cat: r ? r.cat : null,
       dasherId: r ? dasherP().id : null, isDasher: isD, last: O.last || {}, winners: O.phase === "winner" ? winners() : []
     };
@@ -158,12 +167,27 @@ const OL = (() => {
     return v;
   }
 
+  /* =================== CONNECTIONS ===================
+     Every phone gets a full backup copy of the game ("snap") with each update.
+     If the host disappears, the next player in line takes over as host on a new
+     room id (epoch + 1). Anyone who comes back (including the old host) finds the
+     newest host and rejoins as a player. */
+  const HEARTBEAT = 3000, CLIENT_SILENCE = 10000, HOST_SILENCE = 14000, TAKEOVER_AFTER = 8000, TAKEOVER_STEP = 6000;
+  let epoch = 0, snap = null, lastMsg = 0, lostSince = 0, tryAlt = false, takingOver = false;
+  let probePeer = null, probing = false, lastProbe = 0, hbTimer = null;
+  const visible = () => document.visibilityState === "visible";
+
+  function saveSess(){
+    if(!code) return;
+    ls.set(LS_SESS, { code, epoch, snap: isHost ? O : snap, at: Date.now() });
+  }
+
   function broadcast(){
     if(!isHost || !O) return;
-    ls.set(LS_HOST, O);
+    saveSess();
     Object.keys(conns).forEach(pid => {
       const c = conns[pid];
-      if(c && c.open){ try{ c.send({ t: "state", v: viewFor(pid) }); }catch(e){} }
+      if(c && c.open){ try{ c.send({ t: "state", v: viewFor(pid), snap: O, ep: O.epoch }); }catch(e){} }
     });
     V = viewFor(me.id);
     render();
@@ -171,6 +195,8 @@ const OL = (() => {
 
   function hostMsg(c, m){
     if(!m || typeof m !== "object") return;
+    c.lastSeen = Date.now();
+    if(m.t === "pong") return;
     if(m.t === "hello"){
       if(typeof m.id !== "string" || !m.id) return;
       const old = conns[m.id];
@@ -183,74 +209,201 @@ const OL = (() => {
       broadcast();
       return;
     }
+    if(m.t === "bye"){
+      if(c.pid && conns[c.pid] === c){
+        delete conns[c.pid];
+        if(O.phase === "lobby") O.players = O.players.filter(p => p.id !== c.pid);
+        broadcast();
+      }
+      return;
+    }
     if(c.pid && conns[c.pid] === c) hostAct(c.pid, m);
   }
 
-  function openHostPeer(resuming, tries){
+  function hostBeat(){
+    if(!isHost || !O) return;
+    const now = Date.now(); let changed = false;
+    Object.keys(conns).forEach(pid => {
+      const c = conns[pid];
+      if(!c.open || now - (c.lastSeen || now) > HOST_SILENCE){ try{ c.close(); }catch(e){} delete conns[pid]; changed = true; }
+      else { try{ c.send({ t: "ping" }); }catch(e){} }
+    });
+    if(changed) broadcast();
+    // make sure nobody else took over while we weren't looking
+    if(visible() && now - lastProbe > 15000) probeNewer();
+    if(peer && !peer.destroyed && peer.disconnected){ try{ peer.reconnect(); }catch(e){} }
+  }
+
+  function clientBeat(){
+    if(isHost || !code) return;
+    const now = Date.now();
+    if(!visible()) return;
+    const live = conn && conn.open && now - lastMsg < CLIENT_SILENCE;
+    if(live){ lostSince = 0; return; }
+    if(!lostSince) lostSince = now;
+    if(conn && conn.open && now - lastMsg >= CLIENT_SILENCE){ try{ conn.close(); }catch(e){} conn = null; }
+    status = snap ? "Lost the host — reconnecting…" : status;
+    render();
+    // has the host been gone long enough that someone should take over?
+    if(snap && !takingOver){
+      const r = successorRank();
+      if(r >= 0 && now - lostSince > TAKEOVER_AFTER + r * TAKEOVER_STEP) takeOver();
+    }
+  }
+
+  function successorRank(){
+    if(!snap || !snap.players) return -1;
+    const online = id => !V || !V.players || (V.players.find(p => p.id === id) || {}).online;
+    const others = snap.players.filter(p => p.id !== snap.hostId);
+    const order = others.filter(p => online(p.id)).concat(others.filter(p => !online(p.id)));
+    return order.findIndex(p => p.id === me.id);
+  }
+
+  function startBeat(){ clearInterval(hbTimer); hbTimer = setInterval(() => { isHost ? hostBeat() : clientBeat(); }, HEARTBEAT); }
+
+  /* --- host side --- */
+  function openHostPeer(mode, tries){
+    // mode: "new" (fresh room), "resume" (reopening my own room), "takeover" (replacing a missing host)
     tries = tries || 0;
     if(peer){ try{ peer.destroy(); }catch(e){} }
-    status = resuming ? "Reopening room…" : "Creating room…";
+    peer = null;
+    status = mode === "new" ? "Creating room…" : mode === "takeover" ? "The host left — you're taking over the room…" : "Reopening room…";
     render();
     if(typeof Peer === "undefined"){ status = "Couldn't load the connection library. Check your internet and reload."; render(); return; }
-    peer = new Peer(peerId(code), peerOpts());
-    peer.on("open", () => { status = ""; broadcast(); });
-    peer.on("connection", c => {
+    const p = new Peer(peerId(code, O.epoch), peerOpts());
+    peer = p;
+    p.on("open", () => {
+      if(peer !== p) return;
+      takingOver = false; epoch = O.epoch;
+      status = mode === "takeover" ? "" : "";
+      if(mode === "takeover") flash = "The host left, so your phone is running the room now. Keep this page open!";
+      broadcast(); startBeat();
+    });
+    p.on("connection", c => {
+      c.lastSeen = Date.now();
       c.on("data", m => hostMsg(c, m));
       c.on("close", () => { if(c.pid && conns[c.pid] === c){ delete conns[c.pid]; broadcast(); } });
       c.on("error", () => {});
     });
-    peer.on("disconnected", () => {
-      status = "Reconnecting…"; render();
-      setTimeout(() => { if(peer && !peer.destroyed && peer.disconnected){ try{ peer.reconnect(); }catch(e){} } }, 1500);
+    p.on("disconnected", () => {
+      if(peer !== p) return;
+      setTimeout(() => { if(peer === p && !p.destroyed && p.disconnected){ try{ p.reconnect(); }catch(e){} } }, 1500);
     });
-    peer.on("error", e => {
+    p.on("error", e => {
+      if(peer !== p) return;
       if(e.type === "unavailable-id"){
-        if(!resuming && O.phase === "lobby" && O.round === 0){ code = genCode(); O.code = code; openHostPeer(false); }
-        else if(tries < 20){ status = "Reopening room… (the old connection is still closing)"; render(); setTimeout(() => openHostPeer(true, tries + 1), 3000); }
+        if(mode === "new" && O.phase === "lobby" && O.round === 0){ code = genCode(); O.code = code; openHostPeer("new"); }
+        else if(mode === "takeover"){ becomeClient(O.epoch, "Someone else took over the room — joining them…"); }
+        else if(tries < 20){ status = "Reopening room… (the old connection is still closing)"; render(); setTimeout(() => { if(isHost) openHostPeer("resume", tries + 1); }, 3000); }
         else { status = "Couldn't reopen the room. Try again in a minute."; render(); }
       } else if(["network", "server-error", "socket-error", "socket-closed"].includes(e.type)){
         status = "Connection problem — retrying…"; render();
-        setTimeout(() => { if(peer && !peer.destroyed){ if(peer.disconnected){ try{ peer.reconnect(); }catch(x){} } } else openHostPeer(true); }, 3000);
+        setTimeout(() => { if(peer === p && !p.destroyed){ if(p.disconnected){ try{ p.reconnect(); }catch(x){} } } else if(isHost) openHostPeer("resume"); }, 3000);
       }
     });
-    peer.on("open", () => { if(peer.disconnected === false) status = ""; render(); });
   }
 
+  // Look for a newer host (epoch + 1). found -> we become a player in that room.
+  function probeNewer(done){
+    if(probing || !code || typeof Peer === "undefined"){ if(done) done(false); return; }
+    probing = true; lastProbe = Date.now();
+    const target = peerId(code, (isHost ? O.epoch : epoch) + 1);
+    let finished = false;
+    const finish = found => {
+      if(finished) return; finished = true; probing = false;
+      if(found && isHost) becomeClient((O.epoch || 0) + 1, "Someone else is running the room now — rejoining as a player…");
+      if(done) done(found);
+    };
+    const go = () => {
+      const c = probePeer.connect(target, { reliable: true });
+      c.on("open", () => { try{ c.close(); }catch(e){} finish(true); });
+      setTimeout(() => finish(false), 5000);
+    };
+    if(probePeer && !probePeer.destroyed && probePeer.open) go();
+    else {
+      if(probePeer){ try{ probePeer.destroy(); }catch(e){} }
+      probePeer = new Peer(peerOpts());
+      probePeer.on("open", go);
+      probePeer.on("error", e => { if(e.type === "peer-unavailable") finish(false); else finish(false); });
+    }
+  }
 
-  /* =================== CLIENT =================== */
+  function takeOver(){
+    takingOver = true;
+    O = JSON.parse(JSON.stringify(snap));
+    O.epoch = (snap.epoch || 0) + 1;
+    O.hostId = me.id;
+    isHost = true;
+    if(conn){ try{ conn.close(); }catch(e){} conn = null; }
+    if(peer){ try{ peer.destroy(); }catch(e){} peer = null; }
+    Object.keys(conns).forEach(k => delete conns[k]);
+    openHostPeer("takeover");
+  }
+
+  function becomeClient(ep, msg){
+    isHost = false; takingOver = false;
+    snap = O || snap; O = null;
+    Object.keys(conns).forEach(k => { try{ conns[k].close(); }catch(e){} delete conns[k]; });
+    if(peer){ try{ peer.destroy(); }catch(e){} peer = null; }
+    epoch = ep; lostSince = 0; status = msg || "";
+    saveSess(); render();
+    connectClient(); startBeat();
+  }
+
+  /* --- player side --- */
   function scheduleRetry(){
     clearTimeout(retryTimer);
-    retryTimer = setTimeout(() => { if(!isHost && code && !(conn && conn.open)) connectClient(); }, 3000);
+    retryTimer = setTimeout(() => { if(!isHost && code && !(conn && conn.open)) connectClient(); }, 2500);
   }
   function connectClient(){
+    if(isHost) return;
     if(typeof Peer === "undefined"){ status = "Couldn't load the connection library. Check your internet and reload."; render(); return; }
     if(peer && peer.destroyed) peer = null;
     if(!peer){
-      peer = new Peer(peerOpts());
-      peer.on("open", dial);
-      peer.on("disconnected", () => { setTimeout(() => { if(peer && !peer.destroyed && peer.disconnected){ try{ peer.reconnect(); }catch(e){} } }, 1000); });
-      peer.on("error", e => {
-        if(e.type === "peer-unavailable") status = V ? "Lost the host's phone — reconnecting…" : `Can't find room ${code}. Check the code, and make sure the host has the game open.`;
-        else status = "Connection trouble — retrying…";
+      const p = new Peer(peerOpts());
+      peer = p;
+      p.on("open", () => { if(peer === p) dial(); });
+      p.on("disconnected", () => { setTimeout(() => { if(peer === p && !p.destroyed && p.disconnected){ try{ p.reconnect(); }catch(e){} } }, 1000); });
+      p.on("error", e => {
+        if(peer !== p) return;
+        if(e.type === "peer-unavailable"){
+          tryAlt = !tryAlt;   // alternate between the room we know and a possible newer one
+          if(!snap && !V) status = `Can't find room ${code}. Check the code, and make sure the host has the game open.`;
+          else status = "Lost the host — reconnecting…";
+        } else status = "Connection trouble — retrying…";
         render(); scheduleRetry();
       });
     } else if(peer.open) dial();
     else if(peer.disconnected){ try{ peer.reconnect(); }catch(e){} }
   }
   function dial(){
+    if(isHost) return;
     if(conn){ try{ conn.close(); }catch(e){} }
-    const c = peer.connect(peerId(code), { reliable: true });
+    const target = tryAlt ? epoch + 1 : epoch;
+    const c = peer.connect(peerId(code, target), { reliable: true });
     conn = c;
-    c.on("open", () => { status = ""; c.send({ t: "hello", id: me.id, name: me.name }); render(); });
-    c.on("data", m => {
-      if(!m) return;
-      if(m.t === "state"){ V = m.v; render(); }
-      if(m.t === "kicked"){ leave(true); flash = "You were removed from the room."; }
+    c.on("open", () => {
+      if(conn !== c) return;
+      lastMsg = Date.now(); lostSince = 0; status = "";
+      if(target !== epoch){ epoch = target; }
+      c.send({ t: "hello", id: me.id, name: me.name }); render();
     });
-    c.on("close", () => { if(conn === c){ status = "Lost connection — reconnecting…"; render(); scheduleRetry(); } });
+    c.on("data", m => {
+      if(!m || conn !== c) return;
+      lastMsg = Date.now(); lostSince = 0;
+      if(m.t === "ping"){ try{ c.send({ t: "pong" }); }catch(e){} return; }
+      if(m.t === "state"){
+        V = m.v; if(m.snap) snap = m.snap; if(typeof m.ep === "number") epoch = m.ep;
+        if(status) status = "";
+        saveSess(); render();
+      }
+      if(m.t === "kicked"){ leave(true); flash = "You were removed from the room."; renderMain(); }
+      if(m.t === "closed"){ leave(true); flash = "The host closed the room."; renderMain(); }
+    });
+    c.on("close", () => { if(conn === c){ conn = null; if(!lostSince) lostSince = Date.now(); status = "Lost connection — reconnecting…"; render(); scheduleRetry(); } });
     c.on("error", () => { scheduleRetry(); });
     clearTimeout(retryTimer);
-    retryTimer = setTimeout(() => { if(conn === c && !c.open){ status = V ? "Reconnecting…" : "Still trying to reach the room…"; render(); connectClient(); } }, 8000);
+    retryTimer = setTimeout(() => { if(conn === c && !c.open){ tryAlt = !tryAlt; connectClient(); } }, 6000);
   }
 
   function send(m){
@@ -260,26 +413,57 @@ const OL = (() => {
   }
 
   function leave(silent){
-    clearTimeout(retryTimer);
-    if(peer){ try{ peer.destroy(); }catch(e){} }
-    peer = null; conn = null; V = null; O = null; code = null; status = ""; overlay = null;
+    clearTimeout(retryTimer); clearInterval(hbTimer);
+    if(isHost) Object.values(conns).forEach(c => { try{ c.send({ t: "closed" }); }catch(e){} });
+    else if(conn && conn.open){ try{ conn.send({ t: "bye" }); }catch(e){} }
+    const p = peer, pp = probePeer;
+    setTimeout(() => { [p, pp].forEach(x => { if(x){ try{ x.destroy(); }catch(e){} } }); }, 400);
+    peer = null; probePeer = null; conn = null; V = null; O = null; snap = null; code = null; status = ""; overlay = null; epoch = 0;
     Object.keys(conns).forEach(k => delete conns[k]);
-    if(isHost) ls.del(LS_HOST); else ls.del(LS_CLIENT);
-    isHost = false;
+    ls.del(LS_SESS);
+    isHost = false; takingOver = false; lostSince = 0;
     S.screen = "home"; save(); render();
     if(!silent) window.scrollTo(0, 0);
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if(document.visibilityState !== "visible" || S.screen !== "online" || !code) return;
-    if(peer && !peer.destroyed && peer.disconnected){ try{ peer.reconnect(); }catch(e){} }
-    if(isHost && (!peer || peer.destroyed)) openHostPeer(true);
-    if(!isHost && !(conn && conn.open)) connectClient();
-  });
+  // Coming back to the page: reconnect right away.
+  function onReturn(){
+    if(!visible() || !code) return;
+    if(isHost){
+      probeNewer(found => {
+        if(found || !isHost) return;
+        if(!peer || peer.destroyed) openHostPeer("resume");
+        else if(peer.disconnected){ try{ peer.reconnect(); }catch(e){} }
+      });
+    } else {
+      lostSince = Date.now();
+      if(!(conn && conn.open && Date.now() - lastMsg < CLIENT_SILENCE)){ if(peer && peer.disconnected){ try{ peer.reconnect(); }catch(e){} } connectClient(); }
+    }
+  }
+  document.addEventListener("visibilitychange", onReturn);
+  window.addEventListener("pageshow", onReturn);
+  window.addEventListener("online", onReturn);
+
+  // Resume a saved session (after a reload, or from the home screen).
+  function resume(){
+    const s = ls.get(LS_SESS); if(!s || !s.code) return false;
+    code = s.code; epoch = s.epoch || 0; snap = s.snap || null; V = null; status = "Reconnecting…";
+    S.screen = "online"; save();
+    if(snap && snap.hostId === me.id){
+      // I was the host. If nobody took over while I was gone, reopen my room.
+      O = snap; isHost = true; V = viewFor(me.id); render();
+      probeNewer(found => { if(!found && isHost) openHostPeer("resume"); });
+      startBeat();
+    } else {
+      isHost = false; render(); connectClient(); startBeat();
+    }
+    return true;
+  }
 
   /* =================== UI =================== */
   const nmV = id => ((V && V.players.find(p => p.id === id)) || {}).name || "?";
-  const banner = () => status ? `<div class="card" style="background:#ff6b6b;color:#3a0a0a;padding:12px 14px;font-weight:600">${esc(status)}</div>` : "";
+  const banner = () => (status ? `<div class="card" style="background:#ff6b6b;color:#3a0a0a;padding:12px 14px;font-weight:600">${esc(status)}</div>` : "")
+    + (code && flash && isHost && V && V.phase !== "lobby" ? `<div class="card" style="background:var(--teal);color:#06302c;padding:12px 14px;font-weight:600">${esc(flash)} <button class="link" style="display:inline;padding:0 4px;color:#06302c" data-ol="dismiss">OK</button></div>` : "");
   const bar = () => `<div class="bar"><span class="meta">Room <b>${esc(code)}</b>${V && V.round ? " · Round " + V.round : ""}</span><button class="iconbtn" data-ol="menu" aria-label="Menu">☰</button></div>`;
   const val = (id, def) => esc(drafts[id] != null ? drafts[id] : (def || ""));
 
@@ -297,7 +481,7 @@ const OL = (() => {
   S_.hostname = () => `<div class="screen">
     <div class="bar"><button class="iconbtn" data-ol="home">‹</button><span class="meta">Host a game</span><span style="width:40px"></span></div>
     <h1>Host a game</h1>
-    <p class="sub">Your phone will run the room — keep this page open while you play. Everyone else joins with a link or room code.</p>
+    <p class="sub">Everyone else joins with a link or room code. If you step away, the next player's phone takes over the room and you'll rejoin when you're back.</p>
     <label class="lbl">Your name</label>
     <input type="text" id="olName" maxlength="20" autocomplete="off" value="${val("olName", me.name)}" enterkeyhint="go">
     <div style="height:12px"></div>
@@ -507,19 +691,20 @@ const OL = (() => {
         if(!n){ markBad("olName"); return; }
         me.name = n.slice(0, 20); ls.set(LS_ME, me);
         isHost = true; code = genCode();
-        O = { code, players: [{ id: me.id, name: me.name, score: 0 }], cats: (S.settings.cats || CAT_KEYS).slice(), target: 25, phase: "lobby", dasher: 0, round: 0, r: null, used: [], last: {} };
+        O = { code, epoch: 0, hostId: me.id, players: [{ id: me.id, name: me.name, score: 0 }], cats: (S.settings.cats || CAT_KEYS).slice(), target: 25, phase: "lobby", dasher: 0, round: 0, r: null, used: [], last: {} };
         V = viewFor(me.id);
-        openHostPeer(false); break; }
+        openHostPeer("new"); break; }
       case "dojoin": {
         const c = (document.getElementById("olCode").value || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
         const n = (document.getElementById("olName").value || "").trim();
         if(c.length !== 4){ markBad("olCode"); return; }
         if(!n){ markBad("olName"); return; }
         me.name = n.slice(0, 20); ls.set(LS_ME, me);
-        isHost = false; code = c; V = null; status = "";
-        ls.set(LS_CLIENT, { code });
-        render(); connectClient(); break; }
+        isHost = false; code = c; epoch = 0; snap = null; V = null; status = ""; tryAlt = false;
+        ls.set(LS_SESS, { code, epoch: 0, snap: null, at: Date.now() });
+        render(); connectClient(); startBeat(); break; }
       case "share": share(); break;
+      case "dismiss": flash = ""; render(); break;
       case "menu": overlay = "menu"; render(); break;
       case "rules": overlay = "rules"; render(); break;
       case "closeov": overlay = null; render(); break;
@@ -582,21 +767,19 @@ const OL = (() => {
     render,
     openHost(){ ui = "hostname"; code = null; V = null; status = ""; S.screen = "online"; save(); render(); },
     openJoin(c){ ui = "join"; code = null; V = null; status = ""; if(c) drafts.olCode = c; S.screen = "online"; save(); render(); },
-    resumeHost(){
-      const saved = ls.get(LS_HOST); if(!saved) return;
-      O = saved; code = O.code; isHost = true; V = viewFor(me.id); S.screen = "online"; save();
-      openHostPeer(true);
-    },
-    rejoin(){
-      const c = ls.get(LS_CLIENT); if(!c) return;
-      code = c.code; isHost = false; V = null; status = ""; S.screen = "online"; save(); render(); connectClient();
+    resumeHost(){ resume(); },
+    rejoin(){ resume(); },
+    autoResume(){
+      const s = ls.get(LS_SESS);
+      if(s && s.code && Date.now() - (s.at || 0) < 6 * 3600 * 1000) return resume();
+      return false;
     },
     homeButtons(){
-      const h = ls.get(LS_HOST), c = ls.get(LS_CLIENT);
-      return (h ? `<button class="btn teal" data-act="olresume">Reopen your room ${esc(h.code)}</button>` : "")
-           + (c ? `<button class="btn teal" data-act="olrejoin">Rejoin room ${esc(c.code)}</button>` : "")
+      const s = ls.get(LS_SESS);
+      return (s && s.code ? `<button class="btn teal" data-act="olrejoin">Rejoin room ${esc(s.code)}</button>` : "")
            + (flash && !code ? `<p class="hint">${esc(flash)}</p>` : "");
     },
+    debug(){ return { isHost, epoch, lostSince, lastMsg, now: Date.now(), status, takingOver, rank: successorRank(), conn: !!(conn && conn.open), hasSnap: !!snap, vis: document.visibilityState, hb: !!hbTimer }; },
     get me(){ return me; }
   };
 })();
@@ -604,5 +787,11 @@ const OL = (() => {
 /* open a join link like ?join=ABCD */
 (function(){
   const q = new URLSearchParams(location.search).get("join");
-  if(q){ history.replaceState(null, "", location.pathname); OL.openJoin(q.toUpperCase().slice(0, 4)); }
+  if(q){
+    history.replaceState(null, "", location.pathname);
+    const code = q.toUpperCase().slice(0, 4);
+    let s = null; try{ s = JSON.parse(localStorage.getItem("bd_sess")); }catch(e){}
+    if(s && s.code === code){ OL.autoResume() || OL.openJoin(code); }
+    else OL.openJoin(code);
+  } else OL.autoResume();
 })();

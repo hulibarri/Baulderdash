@@ -161,7 +161,7 @@ label.lbl{display:block;font-size:13px;font-weight:700;color:var(--muted);margin
 <script src="peerjs.min.js"></script>
 <script>
 "use strict";
-const VERSION = "2.2";
+const VERSION = "2.3";
 const KEY = "balderdash_v1";
 const MIN_PLAYERS = 3;
 const app = document.getElementById("app");
@@ -568,7 +568,8 @@ function rulesHTML(){ return `<div class="rules">
   <p>Each round, one player is the <b>Dasher</b> and everyone else is a bluffer.</p>
   <h2>Everyone on their own phone</h2>
   <ol>
-    <li>One person taps <b>Host a game</b> and keeps that page open. Everyone else taps <b>Join a game</b> and enters the room code, or opens the invite link.</li>
+    <li>One person taps <b>Host a game</b>. Everyone else taps <b>Join a game</b> and enters the room code, or opens the invite link.</li>
+    <li>Need to check something? Go ahead. If the host's phone leaves for more than about 20 seconds, the next player's phone takes over the room, and you'll rejoin when you come back.</li>
     <li>The Dasher's phone shows a card — a weird word, a person, some initials, a movie, a law or a date — with the real answer. The Dasher reads it aloud.</li>
     <li>Everyone types a fake answer on their phone. It's sent straight to the Dasher.</li>
     <li>The Dasher shuffles. The real one is mixed in, and the numbered list shows on everyone's phone. The Dasher reads them all aloud.</li>
